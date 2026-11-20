@@ -1,0 +1,953 @@
+{
+ "_about": "iSmile ERP demo seed: the ONE source of truth for erp/demo/demo.html (build_demo.py). days_ago = days before the day the page is opened. Invented companies and people; tax IDs and barcodes are made up but pass the AFM / EAN-13 checks.",
+ "tenant": {
+  "code": "ismile-demo",
+  "name": "iSmile (demo)"
+ },
+ "settings": {
+  "time_zone": "Europe/Athens",
+  "negative_stock": "warn",
+  "exp_limit": 300
+ },
+ "branches": [
+  {
+   "id": "b1",
+   "code": "SER",
+   "name": "Serres",
+   "address": "Merarchias 12, Serres"
+  },
+  {
+   "id": "b2",
+   "code": "THE",
+   "name": "Thessaloniki",
+   "address": "Tsimiski 80, Thessaloniki"
+  },
+  {
+   "id": "b3",
+   "code": "ALE",
+   "name": "Alexandreia",
+   "address": "Ellinikou Stratou 5, Alexandreia"
+  }
+ ],
+ "warehouses": [
+  {
+   "id": "w1",
+   "branch": "b1",
+   "code": "SER-MAIN",
+   "name": "Serres clinic store"
+  },
+  {
+   "id": "w2",
+   "branch": "b2",
+   "code": "THE-MAIN",
+   "name": "Thessaloniki clinic store"
+  },
+  {
+   "id": "w3",
+   "branch": "b3",
+   "code": "ALE-MAIN",
+   "name": "Alexandreia clinic store"
+  },
+  {
+   "id": "wt",
+   "branch": null,
+   "code": "TRANSIT",
+   "name": "Goods in transit (system)",
+   "kind": "in_transit"
+  }
+ ],
+ "users": [
+  {
+   "key": "owner",
+   "role": "owner",
+   "home": null,
+   "email": "owner@ismile.demo",
+   "name": "Clinic owner",
+   "label": "Owner (all clinics)"
+  },
+  {
+   "key": "manager",
+   "role": "manager",
+   "home": "b1",
+   "email": "manager.serres@ismile.demo",
+   "name": "Maria (manager)",
+   "label": "Manager, Serres"
+  },
+  {
+   "key": "warehouse",
+   "role": "warehouse",
+   "home": "b2",
+   "email": "store.thess@ismile.demo",
+   "name": "Nikos (store)",
+   "label": "Warehouse, Thessaloniki"
+  },
+  {
+   "key": "clinic",
+   "role": "clinic_user",
+   "home": "b3",
+   "email": "assistant.alex@ismile.demo",
+   "name": "Eleni (assistant)",
+   "label": "Clinic user, Alexandreia"
+  },
+  {
+   "key": "accounting",
+   "role": "accounting",
+   "home": "b1",
+   "email": "accounts@ismile.demo",
+   "name": "Accounts office",
+   "label": "Accounting, Serres"
+  }
+ ],
+ "units": [
+  {
+   "code": "PCS",
+   "name": "Pieces"
+  },
+  {
+   "code": "PACK",
+   "name": "Pack"
+  },
+  {
+   "code": "BOX",
+   "name": "Box"
+  },
+  {
+   "code": "KIT",
+   "name": "Kit (one patient)"
+  },
+  {
+   "code": "SYR",
+   "name": "Syringe"
+  },
+  {
+   "code": "ROLL",
+   "name": "Roll"
+  }
+ ],
+ "vat_classes": [
+  {
+   "id": "v24",
+   "code": "VAT24",
+   "name": "VAT 24%",
+   "rate": "24.00",
+   "mydata_category": 1
+  },
+  {
+   "id": "v13",
+   "code": "VAT13",
+   "name": "VAT 13%",
+   "rate": "13.00",
+   "mydata_category": 2
+  },
+  {
+   "id": "v6",
+   "code": "VAT6",
+   "name": "VAT 6%",
+   "rate": "6.00",
+   "mydata_category": 3
+  },
+  {
+   "id": "v0",
+   "code": "VAT0",
+   "name": "VAT exempt",
+   "rate": "0.00",
+   "mydata_category": 7
+  }
+ ],
+ "item_categories": [
+  {
+   "code": "ORTHO",
+   "name": "Orthodontic materials"
+  },
+  {
+   "code": "BRK",
+   "name": "Brackets",
+   "parent": "ORTHO"
+  },
+  {
+   "code": "WIRE",
+   "name": "Archwires",
+   "parent": "ORTHO"
+  },
+  {
+   "code": "ELAS",
+   "name": "Elastics and ligatures",
+   "parent": "ORTHO"
+  },
+  {
+   "code": "BAND",
+   "name": "Bands and tubes",
+   "parent": "ORTHO"
+  },
+  {
+   "code": "BOND",
+   "name": "Bonding and cements",
+   "parent": "ORTHO"
+  },
+  {
+   "code": "RET",
+   "name": "Retention",
+   "parent": "ORTHO"
+  },
+  {
+   "code": "ALN",
+   "name": "Aligner supplies",
+   "parent": "ORTHO"
+  },
+  {
+   "code": "PPE",
+   "name": "Disposables and PPE"
+  }
+ ],
+ "items": [
+  {
+   "code": "BRK-M22",
+   "name": "Metal brackets MBT .022, 5-5 kit",
+   "unit": "KIT",
+   "category": "BRK",
+   "vat": "VAT24",
+   "cost": 18.5,
+   "min_level": 10,
+   "barcode": "5204417100017"
+  },
+  {
+   "code": "BRK-C22",
+   "name": "Ceramic brackets MBT .022, 5-5 kit",
+   "unit": "KIT",
+   "category": "BRK",
+   "vat": "VAT24",
+   "cost": 62.0,
+   "min_level": 4,
+   "barcode": "5204417100024"
+  },
+  {
+   "code": "BRK-SL22",
+   "name": "Self-ligating brackets .022, 5-5 kit",
+   "unit": "KIT",
+   "category": "BRK",
+   "vat": "VAT24",
+   "cost": 95.0,
+   "min_level": 3,
+   "barcode": "5204417100031"
+  },
+  {
+   "code": "TUB-M1",
+   "name": "Buccal tubes 1st molar, bondable (10)",
+   "unit": "PACK",
+   "category": "BAND",
+   "vat": "VAT24",
+   "cost": 14.0,
+   "min_level": 5,
+   "barcode": "5204417100048"
+  },
+  {
+   "code": "BND-M1",
+   "name": "Molar bands with tube, assorted (10)",
+   "unit": "PACK",
+   "category": "BAND",
+   "vat": "VAT24",
+   "cost": 26.0,
+   "min_level": 3,
+   "barcode": "5204417100055"
+  },
+  {
+   "code": "WIR-N014U",
+   "name": "NiTi archwire .014 upper (10)",
+   "unit": "PACK",
+   "category": "WIRE",
+   "vat": "VAT24",
+   "cost": 9.8,
+   "min_level": 8,
+   "barcode": "5204417100062"
+  },
+  {
+   "code": "WIR-N016U",
+   "name": "NiTi archwire .016 upper (10)",
+   "unit": "PACK",
+   "category": "WIRE",
+   "vat": "VAT24",
+   "cost": 9.8,
+   "min_level": 8,
+   "barcode": "5204417100079"
+  },
+  {
+   "code": "WIR-N016L",
+   "name": "NiTi archwire .016 lower (10)",
+   "unit": "PACK",
+   "category": "WIRE",
+   "vat": "VAT24",
+   "cost": 9.8,
+   "min_level": 8,
+   "barcode": "5204417100086"
+  },
+  {
+   "code": "WIR-N1622",
+   "name": "NiTi archwire 16x22 upper (10)",
+   "unit": "PACK",
+   "category": "WIRE",
+   "vat": "VAT24",
+   "cost": 11.5,
+   "min_level": 6,
+   "barcode": "5204417100093"
+  },
+  {
+   "code": "WIR-S1925",
+   "name": "Stainless steel archwire 19x25 (10)",
+   "unit": "PACK",
+   "category": "WIRE",
+   "vat": "VAT24",
+   "cost": 8.4,
+   "min_level": 6,
+   "barcode": "5204417100109"
+  },
+  {
+   "code": "WIR-TMA",
+   "name": "TMA archwire 17x25 (10)",
+   "unit": "PACK",
+   "category": "WIRE",
+   "vat": "VAT24",
+   "cost": 21.0,
+   "min_level": 2,
+   "barcode": "5204417100116"
+  },
+  {
+   "code": "ELA-LIG",
+   "name": "Elastomeric ligatures, assorted colours (1008)",
+   "unit": "PACK",
+   "category": "ELAS",
+   "vat": "VAT24",
+   "cost": 7.5,
+   "min_level": 6,
+   "barcode": "5204417100123"
+  },
+  {
+   "code": "ELA-CHN",
+   "name": "Power chain, closed, grey (15 ft)",
+   "unit": "ROLL",
+   "category": "ELAS",
+   "vat": "VAT24",
+   "cost": 6.9,
+   "min_level": 5,
+   "barcode": "5204417100130"
+  },
+  {
+   "code": "ELA-14M",
+   "name": "Intraoral elastics 1/4\" medium (100)",
+   "unit": "PACK",
+   "category": "ELAS",
+   "vat": "VAT24",
+   "cost": 3.2,
+   "min_level": 20,
+   "barcode": "5204417100147"
+  },
+  {
+   "code": "ELA-316M",
+   "name": "Intraoral elastics 3/16\" medium (100)",
+   "unit": "PACK",
+   "category": "ELAS",
+   "vat": "VAT24",
+   "cost": 3.2,
+   "min_level": 20,
+   "barcode": "5204417100154"
+  },
+  {
+   "code": "ELA-SEP",
+   "name": "Separating elastics (1000)",
+   "unit": "PACK",
+   "category": "ELAS",
+   "vat": "VAT24",
+   "cost": 8.0,
+   "min_level": 2,
+   "barcode": "5204417100161"
+  },
+  {
+   "code": "BON-ETCH",
+   "name": "Etching gel 37% phosphoric acid, 3 ml syringe",
+   "unit": "SYR",
+   "category": "BOND",
+   "vat": "VAT24",
+   "cost": 4.5,
+   "min_level": 10,
+   "barcode": "5204417100178"
+  },
+  {
+   "code": "BON-PRIM",
+   "name": "Bonding primer, 6 ml",
+   "unit": "PCS",
+   "category": "BOND",
+   "vat": "VAT24",
+   "cost": 32.0,
+   "min_level": 2,
+   "barcode": "5204417100185"
+  },
+  {
+   "code": "BON-COMP",
+   "name": "Orthodontic composite adhesive, 4 g syringe",
+   "unit": "SYR",
+   "category": "BOND",
+   "vat": "VAT24",
+   "cost": 24.0,
+   "min_level": 6,
+   "barcode": "5204417100192"
+  },
+  {
+   "code": "BON-GIC",
+   "name": "Band cement, glass ionomer",
+   "unit": "PCS",
+   "category": "BOND",
+   "vat": "VAT24",
+   "cost": 38.0,
+   "min_level": 2,
+   "barcode": "5204417100208"
+  },
+  {
+   "code": "RET-WIRE",
+   "name": "Retainer wire, braided .0195 (roll)",
+   "unit": "ROLL",
+   "category": "RET",
+   "vat": "VAT24",
+   "cost": 29.0,
+   "min_level": 2,
+   "barcode": "5204417100215"
+  },
+  {
+   "code": "RET-SHEET",
+   "name": "Retainer sheets 1.0 mm (box of 25)",
+   "unit": "BOX",
+   "category": "RET",
+   "vat": "VAT24",
+   "cost": 45.0,
+   "min_level": 2,
+   "barcode": "5204417100222"
+  },
+  {
+   "code": "ALN-ATT",
+   "name": "Aligner attachment composite, template syringe",
+   "unit": "SYR",
+   "category": "ALN",
+   "vat": "VAT24",
+   "cost": 21.0,
+   "min_level": 3,
+   "barcode": "5204417100239"
+  },
+  {
+   "code": "ALN-CASE",
+   "name": "Aligner cases (50)",
+   "unit": "PACK",
+   "category": "ALN",
+   "vat": "VAT24",
+   "cost": 22.0,
+   "min_level": 2,
+   "barcode": "5204417100246"
+  },
+  {
+   "code": "PPE-GLVM",
+   "name": "Nitrile gloves, size M (100)",
+   "unit": "BOX",
+   "category": "PPE",
+   "vat": "VAT24",
+   "cost": 6.2,
+   "min_level": 15,
+   "barcode": "5204417100253"
+  },
+  {
+   "code": "PPE-GLVS",
+   "name": "Nitrile gloves, size S (100)",
+   "unit": "BOX",
+   "category": "PPE",
+   "vat": "VAT24",
+   "cost": 6.2,
+   "min_level": 10,
+   "barcode": "5204417100260"
+  },
+  {
+   "code": "PPE-MASK",
+   "name": "Surgical masks type IIR (50)",
+   "unit": "BOX",
+   "category": "PPE",
+   "vat": "VAT24",
+   "cost": 4.8,
+   "min_level": 10,
+   "barcode": "5204417100277"
+  },
+  {
+   "code": "PPE-MIRR",
+   "name": "Disposable mouth mirrors (100)",
+   "unit": "BOX",
+   "category": "PPE",
+   "vat": "VAT24",
+   "cost": 18.0,
+   "min_level": 4,
+   "barcode": "5204417100284"
+  },
+  {
+   "code": "PPE-CHEEK",
+   "name": "Cheek retractors, disposable (50)",
+   "unit": "PACK",
+   "category": "PPE",
+   "vat": "VAT24",
+   "cost": 15.0,
+   "min_level": 3,
+   "barcode": "5204417100291"
+  },
+  {
+   "code": "PPE-BIB",
+   "name": "Patient bibs (500)",
+   "unit": "BOX",
+   "category": "PPE",
+   "vat": "VAT24",
+   "cost": 19.0,
+   "min_level": 2,
+   "barcode": "5204417100307"
+  },
+  {
+   "code": "PPE-WIPE",
+   "name": "Surface disinfectant wipes (200)",
+   "unit": "PCS",
+   "category": "PPE",
+   "vat": "VAT24",
+   "cost": 7.4,
+   "min_level": 5,
+   "barcode": "5204417100314"
+  }
+ ],
+ "suppliers": [
+  {
+   "code": "SUP-ORTH",
+   "name": "Orthodontiki Ellas AE",
+   "tax_id": "099123455",
+   "tax_office": "Thessalonikis D'",
+   "city": "Thessaloniki",
+   "phone": "2310 000101"
+  },
+  {
+   "code": "SUP-DENT",
+   "name": "DentaPro Hellas IKE",
+   "tax_id": "801234560",
+   "tax_office": "Kallitheas",
+   "city": "Athens",
+   "phone": "210 0000202"
+  },
+  {
+   "code": "SUP-MED",
+   "name": "MedSafe Supplies OE",
+   "tax_id": "998877666",
+   "tax_office": "Serron",
+   "city": "Serres",
+   "phone": "23210 00303"
+  },
+  {
+   "code": "SUP-LAB",
+   "name": "Vertex Dental Lab",
+   "tax_id": "123123128",
+   "tax_office": "Kalamarias",
+   "city": "Thessaloniki",
+   "phone": "2310 000404"
+  }
+ ],
+ "expense_categories": [
+  {
+   "code": "RENT",
+   "name": "Rent",
+   "vat": "VAT0"
+  },
+  {
+   "code": "UTIL",
+   "name": "Utilities",
+   "vat": "VAT24"
+  },
+  {
+   "code": "ELEC",
+   "name": "Electricity",
+   "vat": "VAT24",
+   "parent": "UTIL"
+  },
+  {
+   "code": "WATER",
+   "name": "Water",
+   "vat": "VAT13",
+   "parent": "UTIL"
+  },
+  {
+   "code": "TEL",
+   "name": "Telephone and internet",
+   "vat": "VAT24"
+  },
+  {
+   "code": "CLEAN",
+   "name": "Cleaning services",
+   "vat": "VAT24"
+  },
+  {
+   "code": "LAB",
+   "name": "Dental lab work",
+   "vat": "VAT24"
+  },
+  {
+   "code": "MAINT",
+   "name": "Equipment maintenance",
+   "vat": "VAT24"
+  },
+  {
+   "code": "MKT",
+   "name": "Marketing",
+   "vat": "VAT24"
+  },
+  {
+   "code": "ACC",
+   "name": "Accounting fees",
+   "vat": "VAT24"
+  },
+  {
+   "code": "BANK",
+   "name": "Bank charges",
+   "vat": "VAT0"
+  },
+  {
+   "code": "OLDPRINT",
+   "name": "Printing (old, unused)",
+   "vat": "VAT24",
+   "active": false
+  }
+ ],
+ "opening": {
+  "days_ago": 45,
+  "factor": {
+   "SER-MAIN": 3,
+   "THE-MAIN": 2,
+   "ALE-MAIN": 1.5
+  }
+ },
+ "documents": [
+  {
+   "type": "GRN",
+   "wh": "SER-MAIN",
+   "days_ago": 30,
+   "user": "manager",
+   "supplier": "SUP-ORTH",
+   "ext_number": "ΔΑ 4411",
+   "lines": [
+    [
+     "BRK-M22",
+     10,
+     18.2
+    ],
+    [
+     "WIR-N014U",
+     6,
+     9.8
+    ],
+    [
+     "WIR-N1622",
+     4,
+     11.5
+    ]
+   ]
+  },
+  {
+   "type": "GRN",
+   "wh": "THE-MAIN",
+   "days_ago": 26,
+   "user": "warehouse",
+   "supplier": "SUP-MED",
+   "ext_number": "ΤΔΑ 1290",
+   "lines": [
+    [
+     "PPE-GLVS",
+     10,
+     6.1
+    ],
+    [
+     "PPE-MASK",
+     10,
+     4.8
+    ],
+    [
+     "PPE-WIPE",
+     6,
+     7.2
+    ]
+   ]
+  },
+  {
+   "type": "GRN",
+   "wh": "ALE-MAIN",
+   "days_ago": 21,
+   "user": "owner",
+   "supplier": "SUP-DENT",
+   "ext_number": "ΔΑ 77-03",
+   "lines": [
+    [
+     "BON-ETCH",
+     10,
+     4.4
+    ],
+    [
+     "ELA-LIG",
+     4,
+     7.5
+    ]
+   ]
+  },
+  {
+   "type": "CONS",
+   "wh": "SER-MAIN",
+   "days_ago": 18,
+   "user": "manager",
+   "cost_centre": "Bonding day",
+   "lines": [
+    [
+     "BRK-M22",
+     6
+    ],
+    [
+     "BON-ETCH",
+     6
+    ],
+    [
+     "BON-COMP",
+     3
+    ],
+    [
+     "TUB-M1",
+     2
+    ]
+   ]
+  },
+  {
+   "type": "CONS",
+   "wh": "THE-MAIN",
+   "days_ago": 14,
+   "user": "warehouse",
+   "cost_centre": "Chair 2",
+   "lines": [
+    [
+     "PPE-GLVM",
+     22
+    ],
+    [
+     "PPE-MASK",
+     8
+    ],
+    [
+     "ELA-14M",
+     12
+    ]
+   ]
+  },
+  {
+   "type": "CONS",
+   "wh": "SER-MAIN",
+   "days_ago": 9,
+   "user": "manager",
+   "cost_centre": "Adjustments",
+   "lines": [
+    [
+     "WIR-N016U",
+     18
+    ],
+    [
+     "ELA-LIG",
+     4
+    ],
+    [
+     "ELA-CHN",
+     3
+    ]
+   ]
+  },
+  {
+   "type": "CONS",
+   "wh": "ALE-MAIN",
+   "days_ago": 6,
+   "user": "clinic",
+   "cost_centre": "Review day",
+   "lines": [
+    [
+     "ELA-14M",
+     34
+    ],
+    [
+     "BON-COMP",
+     6
+    ],
+    [
+     "PPE-GLVM",
+     12
+    ]
+   ],
+   "ack": true
+  },
+  {
+   "type": "TRF",
+   "wh": "THE-MAIN",
+   "dest": "SER-MAIN",
+   "days_ago": 5,
+   "user": "warehouse",
+   "carrier": "Clinic car",
+   "lines": [
+    [
+     "PPE-GLVM",
+     8
+    ],
+    [
+     "PPE-MASK",
+     5
+    ]
+   ],
+   "receive": {
+    "days_ago": 3,
+    "user": "manager",
+    "lines": {
+     "PPE-GLVM": [
+      6,
+      "Box crushed, 2 boxes missing"
+     ]
+    }
+   }
+  },
+  {
+   "type": "TRF",
+   "wh": "SER-MAIN",
+   "dest": "THE-MAIN",
+   "days_ago": 1,
+   "user": "manager",
+   "carrier": "Courier",
+   "lines": [
+    [
+     "BRK-M22",
+     4
+    ],
+    [
+     "WIR-N014U",
+     3
+    ],
+    [
+     "BON-ETCH",
+     5
+    ]
+   ]
+  },
+  {
+   "type": "EXP",
+   "branch": "SER",
+   "days_ago": 20,
+   "user": "owner",
+   "ext_number": "Lease Nov",
+   "paid": true,
+   "method": "bank",
+   "lines": [
+    [
+     "RENT",
+     "Clinic rent",
+     1200
+    ]
+   ]
+  },
+  {
+   "type": "EXP",
+   "branch": "SER",
+   "days_ago": 15,
+   "user": "manager",
+   "ext_number": "EL-778812",
+   "paid": true,
+   "method": "card",
+   "lines": [
+    [
+     "ELEC",
+     "Electricity bill",
+     186.4
+    ]
+   ]
+  },
+  {
+   "type": "EXP",
+   "branch": "THE",
+   "days_ago": 19,
+   "user": "owner",
+   "ext_number": "Lease Nov",
+   "paid": true,
+   "method": "bank",
+   "lines": [
+    [
+     "RENT",
+     "Clinic rent",
+     1500
+    ]
+   ]
+  },
+  {
+   "type": "EXP",
+   "branch": "THE",
+   "days_ago": 12,
+   "user": "owner",
+   "supplier": "SUP-LAB",
+   "ext_number": "ΤΠΥ 2231",
+   "lines": [
+    [
+     "LAB",
+     "Retainers, 6 patients",
+     240
+    ],
+    [
+     "LAB",
+     "Study models",
+     60
+    ]
+   ]
+  },
+  {
+   "type": "EXP",
+   "branch": "ALE",
+   "days_ago": 10,
+   "user": "owner",
+   "ext_number": "C-0912",
+   "paid": true,
+   "method": "cash",
+   "lines": [
+    [
+     "CLEAN",
+     "Cleaning, 4 visits",
+     160
+    ]
+   ]
+  },
+  {
+   "type": "EXP",
+   "branch": "ALE",
+   "days_ago": 4,
+   "user": "owner",
+   "ext_number": "TEL-11/26",
+   "paid": true,
+   "method": "card",
+   "lines": [
+    [
+     "TEL",
+     "Phone and fibre",
+     45.9
+    ]
+   ]
+  }
+ ],
+ "extra_members": [
+  {
+   "email": "orthodontist@ismile.demo",
+   "name": "Dr. Orthodontist",
+   "role": "manager",
+   "home": "b2"
+  },
+  {
+   "email": "assistant.serres@ismile.demo",
+   "name": "Anna (assistant)",
+   "role": "clinic_user",
+   "home": "b1"
+  },
+  {
+   "email": "new.assistant@ismile.demo",
+   "name": null,
+   "role": "clinic_user",
+   "home": "b2",
+   "pending": true
+  }
+ ]
+}

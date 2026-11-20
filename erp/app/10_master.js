@@ -3,6 +3,7 @@
 // Lists use the server's keyset cursor ("Load more"); drawers send only the changed keys (+ id / version).
 // Tabs follow the read capability, "New" and Save follow the write capability; the server checks every call again.
 var MD = {tab: null, q: '', rows: [], next: null, busy: false, seq: 0, ref: {}};
+onLogin(function () { MD.ref = {}; });
 
 function mdVal(v) { return v == null ? '' : String(v); }
 // changed keys only: vals = {key: value from the form}; numbers / text compared as text, '' = null

@@ -4,11 +4,19 @@
 //   mock_fail = comma list of RPC names that answer ERP_VALIDATION;  mock_null = comma list that answer null (0 rows)
 //   mock_conflict '1' = member_bind answers bound_to_other_login
 //   mock_exp_limit = a number: the expense approval limit (thresholds.exp_value) the page starts with
+// Demo build (erp/demo/build_demo.py): window.__ERP_DEMO = {store, hook}. The controls above are then read from the in-memory
+// `store` (never from browser storage) and `hook(api)` runs once at the end to load the demo seed and wrap handlers.
 (function () {
   var CALLS = window.__calls = [];
-  function ls(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
-  function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+  var DEMO = window.__ERP_DEMO || null;
+  function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function ls(k) { if (DEMO) return has(DEMO.store, k) ? DEMO.store[k] : null; try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) {
+    if (DEMO) { if (v == null) delete DEMO.store[k]; else DEMO.store[k] = v; return; }
+    try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {}
+  }
   var ROLE = ls('mock_role') || 'owner';
+  var HOME = 'b1';   // the one branch of a non-owner member (the demo's role switcher changes it)
   var FAIL = (ls('mock_fail') || '').split(',').filter(Boolean);
   var NULLS = (ls('mock_null') || '').split(',').filter(Boolean);
   // mirror of erp.role_cap_defaults (E100 / E110 / E120 seeds)
@@ -94,7 +102,7 @@
   var TRFX = {};   // transfer id -> {receipt, recv: {line_id: [qty, reason]}, adj: [doc ids]}
   var ALLWHS = WHS.concat([{warehouse_id: 'w3', branch_id: 'b3', branch_code: 'ALE', code: 'ALE-MAIN', name: 'Alexandreia main', kind: 'normal', active: true}]);
   function whBranch(id) { var w = ALLWHS.find(function (x) { return x.warehouse_id === id; }); return w ? w.branch_id : null; }
-  function mine(br) { return ROLE === 'owner' || br === 'b1'; }
+  function mine(br) { return ROLE === 'owner' || br === HOME; }
   function trfVisible(d) { return mine(d.branch_id) || (d.state !== 'draft' && mine(whBranch(d.dest_warehouse_id))); }
   function trfOut(d) {
     var o = docOut(d), x = TRFX[d.document_id] || {};
@@ -157,7 +165,7 @@
     if (!can('cost.read')) { delete o.total_cost; (o.lines || []).forEach(function (l) { delete l.cost_value; }); }
     return o;
   }
-  function scope(rows) { return ROLE === 'owner' ? rows : rows.filter(function (r) { return !r.branch_id || r.branch_id === 'b1'; }); }
+  function scope(rows) { return ROLE === 'owner' ? rows : rows.filter(function (r) { return !r.branch_id || r.branch_id === HOME; }); }
   function listOf(rows, cap, a, keyf) { if (!can(cap)) return err('ERP_FORBIDDEN', 'no'); return {data: page(rows, a, keyf), error: null}; }
   function saver(rows, key, cap, required, a, param, extra) {
     if (!can(cap)) return err('ERP_FORBIDDEN', 'no');
@@ -193,7 +201,7 @@
     member_bind: function () { return {data: ls('mock_conflict') === '1' ? {bound: false, reason: 'bound_to_other_login'} : {bound: ROLE !== 'none'}, error: null}; },
     whoami: function () {
       if (ROLE === 'none') return err('ERP_AUTH', 'This login is not an active member of an ERP organisation.');
-      var mine = ROLE === 'owner' ? BR : BR.slice(0, 1);
+      var mine = ROLE === 'owner' ? BR : BR.filter(function (b) { return b.branch_id === HOME; });
       return {data: {member_id: 'm-me', email: 'me@clinic.test', display_name: 'Me', role: ROLE, all_branches: ROLE === 'owner',
         tenant: {tenant_id: 't1', code: 'ismile', name: 'iSmile', plan: 'standard'}, branches: mine, caps: CAPS[ROLE],
         settings: {time_zone: SET.time_zone, negative_stock: SET.negative_stock, valuation_method: SET.valuation_method, hide_money: SET.hide_money, lock_date: SET.lock_date},
@@ -277,7 +285,7 @@
     },
     stock_on_hand: function (a) {
       if (!can('stock.read')) return err('ERP_FORBIDDEN', 'no');
-      var f = a.p_filter || {}, rows = ONHAND.filter(function (r) { return (ROLE === 'owner' || r.branch_id === 'b1') && (!f.warehouse_id || r.warehouse_id === f.warehouse_id)
+      var f = a.p_filter || {}, rows = ONHAND.filter(function (r) { return (ROLE === 'owner' || r.branch_id === HOME) && (!f.warehouse_id || r.warehouse_id === f.warehouse_id)
         && (!f.only || (f.only === 'low' && r.low) || (f.only === 'negative' && r.negative)) && (!f.q || r.item_code.toLowerCase().indexOf(f.q.toLowerCase()) === 0); });
       rows = rows.map(function (r) { var o = Object.assign({}, r); if (!can('cost.read')) { delete o.avg_cost; delete o.value; } return o; });
       return {data: page(rows, a, function (r) { return r.item_code + r.warehouse_code; }), error: null};
@@ -494,4 +502,8 @@
       }
     };
   }};
+  if (DEMO && DEMO.hook) DEMO.hook({H: H, emit: emit, can: can, err: err, page: page, docOut: docOut, trfOut: trfOut, docActions: docActions, mine: mine,
+    setRole: function (r, home) { ROLE = r; HOME = home; }, role: function () { return ROLE; }, home: function () { return HOME; },
+    data: {BR: BR, MEM: MEM, UNITS: UNITS, CATS: CATS, VATS: VATS, ITEMS: ITEMS, WHS: WHS, ALLWHS: ALLWHS, CPS: CPS, SER: SER, TYPES: TYPES, ONHAND: ONHAND,
+           STOCKQ: STOCKQ, DOCS: DOCS, ALERTS: ALERTS, EXPCATS: EXPCATS, ITEMBY: ITEMBY, TRFX: TRFX, SET: SET, CAPS: CAPS}});
 })();

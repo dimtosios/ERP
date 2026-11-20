@@ -145,6 +145,17 @@ Short implementation log for Fable. The CRM's `ARCHITECT_STATE.md` is not touche
   `smoke_erp_db.py` +6 (28: EXP posted EXP-SER/000001 with the category's VAT, report, cancel with reason, new
   category), owner / warehouse nav of the other smokes now include Expenses.
 
+- Demo (`erp/demo/`): `demo.html` = ONE self-contained file (erp.html + `seed_demo.json` + `demo_runtime.js` + the UI
+  smokes' stub client, no supabase-js, no key, CSP `connect-src 'none'`, no browser storage; reload = reset) for the
+  owner to click through on a phone: tenant "iSmile (demo)", 3 clinics + TRANSIT, 31 orthodontic items, 4 suppliers,
+  opening stock, GRN / CONS, a transfer waiting for receipt, one received short with its ADJ waiting, low / negative
+  alerts, 6 expenses; banner with a role switcher (owner, manager SER, warehouse THE, clinic_user ALE, accounting SER).
+  `build_demo.py` (validates AFM / EAN, `--check`), `README.md` (10-step script). The stub got a demo hook (in-memory
+  store, seed hook, `HOME` branch instead of the literal b1; unchanged for the smokes); the runtime adds a ledger at
+  average cost, series numbering, alerts and item-import checks. Smoke `smoke_erp_demo.py` (33 checks; fails when
+  demo.html is stale). App fix found by the demo: per-login caches (warehouses, suppliers, categories, branches) were
+  kept across sign-out / sign-in in one tab; now dropped at every sign-in (`onLogin` in 00_core.js).
+
 ## Next
 - Expenses lite done on `main` (not live; clinics try it on a scratch / test project; accountant answers 92-93 before
   real use). Live note: existing branches need Master data > Series "Create missing" once for `EXP-<branch>`.

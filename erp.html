@@ -863,6 +863,10 @@ function toast(text) {
 }
 
 /* ---------- session ---------- */
+// Per-login caches (warehouses, suppliers, categories ...) are dropped at every sign-in: another member signing in on the
+// same tab must not see the previous member's lists. Each screen file registers its reset with onLogin().
+var LOGIN_RESETS = [];
+function onLogin(f) { LOGIN_RESETS.push(f); }
 var entering = false;
 async function enter() {
   if (entering) return; entering = true;
@@ -870,6 +874,7 @@ async function enter() {
 }
 async function enterOnce() {
   S.screen = 'boot'; S.bindConflict = false; render();
+  LOGIN_RESETS.forEach(function (f) { f(); });
   var s = await sb.auth.getSession();
   var sess = s && s.data && s.data.session;
   S.email = (sess && sess.user && sess.user.email) || '';
@@ -922,6 +927,7 @@ document.addEventListener('submit', function (e) {
 // Lists use the server's keyset cursor ("Load more"); drawers send only the changed keys (+ id / version).
 // Tabs follow the read capability, "New" and Save follow the write capability; the server checks every call again.
 var MD = {tab: null, q: '', rows: [], next: null, busy: false, seq: 0, ref: {}};
+onLogin(function () { MD.ref = {}; });
 
 function mdVal(v) { return v == null ? '' : String(v); }
 // changed keys only: vals = {key: value from the form}; numbers / text compared as text, '' = null
@@ -1228,6 +1234,7 @@ ACT['imp-run'] = function () { impCall(false); };
 // Posting with W_STOCK_NEGATIVE warnings opens a dialog; "Post anyway" posts again with ack_warnings = true.
 var STOCK_TYPES = ['OPN', 'GRN', 'ADJ_IN', 'ADJ_OUT', 'CONS'];
 var STK = {tab: null, rows: [], next: null, seq: 0, f: {q: '', wh: '', only: '', type: '', state: ''}, whs: null, types: null, sups: null};
+onLogin(function () { STK.whs = null; STK.sups = null; STK.types = null; STK.f = {q: '', wh: '', only: '', type: '', state: ''}; });
 var DOC_FORM = {   // type -> header fields and line columns
   OPN: {head: ['warehouse', 'date', 'notes'], price: 'cost'},
   GRN: {head: ['warehouse', 'date', 'supplier', 'ext_number', 'ext_date', 'mark', 'notes'], price: 'cost', discount: true},
@@ -1623,6 +1630,7 @@ document.addEventListener('change', function (e) { if (e.target.id === 'opn-wh' 
 // and the receipt form. The destination branch sees a transfer only once dispatched (server rule, STATE 72).
 var TRF_STATES = ['draft', 'dispatched', 'received', 'received_with_difference', 'closed', 'cancelled'];
 var TRF = {rows: [], next: null, seq: 0, f: {state: '', branch: ''}, whs: null};
+onLogin(function () { TRF.whs = null; TRF.f = {state: '', branch: ''}; });
 async function trfWarehouses() {
   if (TRF.whs) return TRF.whs;
   var r = await api('trf_warehouses');
@@ -1769,6 +1777,7 @@ var EXP_STATES = ['draft', 'pending_approval', 'posted', 'cancelled'];
 var EXP_METHODS = ['cash', 'card', 'bank', 'other'];
 var EXP = {tab: null, rows: [], next: null, seq: 0, f: {state: '', branch: '', q: ''}, cats: null, vats: null, rep: null,
            rf: {group: 'category', from: '', to: '', branch: ''}};
+onLogin(function () { EXP.cats = null; EXP.vats = null; EXP.rep = null; EXP.f = {state: '', branch: '', q: ''}; EXP.rf = {group: 'category', from: '', to: '', branch: ''}; });
 var EXP_TABS = [
   {id: 'list', label: 'exp.tab.list'},
   {id: 'categories', label: 'exp.tab.categories'},
@@ -2011,6 +2020,7 @@ ACT['exr-csv'] = function () {
 // with member.manage / branch.write / tenant.settings.write (the server checks again).
 var ROLES = ['owner', 'manager', 'warehouse', 'accounting', 'clinic_user', 'readonly'];
 var ADM = {tab: 'members', q: '', rows: [], next: null, busy: false, branches: [], settings: null};
+onLogin(function () { ADM.branches = []; ADM.settings = null; ADM.q = ''; });
 var ADMIN_TABS = [
   {id: 'members', label: 'admin.tab.members', caps: ['member.read']},
   {id: 'branches', label: 'admin.tab.branches', caps: ['branch.write', 'member.read', 'tenant.settings.read']},

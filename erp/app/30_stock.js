@@ -5,6 +5,7 @@
 // Posting with W_STOCK_NEGATIVE warnings opens a dialog; "Post anyway" posts again with ack_warnings = true.
 var STOCK_TYPES = ['OPN', 'GRN', 'ADJ_IN', 'ADJ_OUT', 'CONS'];
 var STK = {tab: null, rows: [], next: null, seq: 0, f: {q: '', wh: '', only: '', type: '', state: ''}, whs: null, types: null, sups: null};
+onLogin(function () { STK.whs = null; STK.sups = null; STK.types = null; STK.f = {q: '', wh: '', only: '', type: '', state: ''}; });
 var DOC_FORM = {   // type -> header fields and line columns
   OPN: {head: ['warehouse', 'date', 'notes'], price: 'cost'},
   GRN: {head: ['warehouse', 'date', 'supplier', 'ext_number', 'ext_date', 'mark', 'notes'], price: 'cost', discount: true},

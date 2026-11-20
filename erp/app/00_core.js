@@ -277,6 +277,10 @@ function toast(text) {
 }
 
 /* ---------- session ---------- */
+// Per-login caches (warehouses, suppliers, categories ...) are dropped at every sign-in: another member signing in on the
+// same tab must not see the previous member's lists. Each screen file registers its reset with onLogin().
+var LOGIN_RESETS = [];
+function onLogin(f) { LOGIN_RESETS.push(f); }
 var entering = false;
 async function enter() {
   if (entering) return; entering = true;
@@ -284,6 +288,7 @@ async function enter() {
 }
 async function enterOnce() {
   S.screen = 'boot'; S.bindConflict = false; render();
+  LOGIN_RESETS.forEach(function (f) { f(); });
   var s = await sb.auth.getSession();
   var sess = s && s.data && s.data.session;
   S.email = (sess && sess.user && sess.user.email) || '';

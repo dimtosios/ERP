@@ -8,6 +8,7 @@ var EXP_STATES = ['draft', 'pending_approval', 'posted', 'cancelled'];
 var EXP_METHODS = ['cash', 'card', 'bank', 'other'];
 var EXP = {tab: null, rows: [], next: null, seq: 0, f: {state: '', branch: '', q: ''}, cats: null, vats: null, rep: null,
            rf: {group: 'category', from: '', to: '', branch: ''}};
+onLogin(function () { EXP.cats = null; EXP.vats = null; EXP.rep = null; EXP.f = {state: '', branch: '', q: ''}; EXP.rf = {group: 'category', from: '', to: '', branch: ''}; });
 var EXP_TABS = [
   {id: 'list', label: 'exp.tab.list'},
   {id: 'categories', label: 'exp.tab.categories'},

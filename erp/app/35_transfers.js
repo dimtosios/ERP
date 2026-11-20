@@ -6,6 +6,7 @@
 // and the receipt form. The destination branch sees a transfer only once dispatched (server rule, STATE 72).
 var TRF_STATES = ['draft', 'dispatched', 'received', 'received_with_difference', 'closed', 'cancelled'];
 var TRF = {rows: [], next: null, seq: 0, f: {state: '', branch: ''}, whs: null};
+onLogin(function () { TRF.whs = null; TRF.f = {state: '', branch: ''}; });
 async function trfWarehouses() {
   if (TRF.whs) return TRF.whs;
   var r = await api('trf_warehouses');

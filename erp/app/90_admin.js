@@ -3,6 +3,7 @@
 // with member.manage / branch.write / tenant.settings.write (the server checks again).
 var ROLES = ['owner', 'manager', 'warehouse', 'accounting', 'clinic_user', 'readonly'];
 var ADM = {tab: 'members', q: '', rows: [], next: null, busy: false, branches: [], settings: null};
+onLogin(function () { ADM.branches = []; ADM.settings = null; ADM.q = ''; });
 var ADMIN_TABS = [
   {id: 'members', label: 'admin.tab.members', caps: ['member.read']},
   {id: 'branches', label: 'admin.tab.branches', caps: ['branch.write', 'member.read', 'tenant.settings.read']},
