@@ -10,12 +10,13 @@ var DOC_FORM = {   // type -> header fields and line columns
   GRN: {head: ['warehouse', 'date', 'supplier', 'ext_number', 'ext_date', 'mark', 'notes'], price: 'cost', discount: true},
   ADJ_IN: {head: ['warehouse', 'date', 'reason', 'notes'], price: 'cost_optional', reasons: ['found', 'correction']},
   ADJ_OUT: {head: ['warehouse', 'date', 'reason', 'notes'], reasons: ['damaged', 'expired', 'lost', 'correction']},
-  CONS: {head: ['warehouse', 'date', 'cost_centre', 'ext_ref', 'notes'], lineRef: true}
+  CONS: {head: ['warehouse', 'date', 'cost_centre', 'ext_ref', 'notes'], lineRef: true},
+  TRF: {head: ['warehouse', 'dest', 'date', 'delivery', 'notes']}   // T18 (35_transfers.js): source, destination, no price
 };
-function docCap(type, kind) { var p = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons'}[type]; return 'doc.' + p + '.' + kind; }
+function docCap(type, kind) { var p = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf'}[type]; return 'doc.' + p + '.' + kind; }
 function stockReadTypes() { return STOCK_TYPES.filter(function (x) { return can(docCap(x, 'read')); }); }
 function qtyTxt(n) { var v = Number(n); return isNaN(v) ? '' : v.toLocaleString('en-GB', {maximumFractionDigits: 4}); }
-function stateBadge(st) { return '<span class="badge ' + ({posted: 'good', draft: '', pending_approval: 'warn', cancelled: 'bad'}[st] || '') + '">' + esc(t('doc.state.' + st)) + '</span>'; }
+function stateBadge(st) { return '<span class="badge ' + ({posted: 'good', draft: '', pending_approval: 'warn', cancelled: 'bad', dispatched: 'warn', received: 'good', received_with_difference: 'warn', closed: 'good'}[st] || '') + '">' + esc(t('doc.state.' + st)) + '</span>'; }
 async function stkWarehouses() {
   if (STK.whs) return STK.whs;
   var r = await api('warehouse_list', {p_filter: {}, p_limit: 500});
@@ -94,6 +95,7 @@ function stkCall() {
   return ['alert_list', {p_filter: {}, p_limit: 50}];
 }
 async function stkLoad(reset) {
+  if (!$('stk-body')) { if ($('trf-body')) trfLoad(true); return; }   // the document drawer is shared with the Transfers screen
   var my = ++STK.seq, c = stkCall(), tab = STK.tab;
   c[1].p_cursor = reset ? null : STK.next;
   var r = await api(c[0], c[1]);
@@ -197,8 +199,13 @@ function docLineRow(l, i, form, ro) {
 }
 function docHead(d, form, ro) {
   var whs = (STK.whs || []).map(function (w) { return [w.warehouse_id, w.code + ' · ' + w.name]; }), h = '';
+  var own = d.source !== 'system' && (!d.warehouse_id || (STK.whs || []).some(function (w) { return w.warehouse_id === d.warehouse_id; }));
   form.head.forEach(function (f) {
-    if (f === 'warehouse') h += field('d-wh', 'doc.f.warehouse', sel('d-wh', [['', t('md.choose')]].concat(whs), d.warehouse_id || '', ro));
+    if (f === 'warehouse' && !own) h += field('d-wh-ro', d.source === 'system' && d.doc_type === 'ADJ_OUT' ? 'doc.f.warehouse_transit' : (d.doc_type === 'TRF' ? 'trf.f.source' : 'doc.f.warehouse'),
+      inp('d-wh-ro', d.warehouse_code || '', 'text', true));
+    else if (f === 'warehouse') h += field('d-wh', d.doc_type === 'TRF' ? 'trf.f.source' : 'doc.f.warehouse', sel('d-wh', [['', t('md.choose')]].concat(whs), d.warehouse_id || '', ro));
+    else if (f === 'dest') h += trfDestField(d, ro);
+    else if (f === 'delivery') h += trfDeliveryFields(d, ro);
     else if (f === 'date') h += field('d-date', 'doc.f.date', inp('d-date', fmtDate(d.doc_date), 'text', ro));
     else if (f === 'supplier') h += field('d-cp', 'doc.f.supplier', sel('d-cp', [['', t('md.choose')]].concat((STK.sups || []).map(function (c) { return [c.counterparty_id, c.name]; })), d.counterparty_id || '', ro));
     else if (f === 'ext_number') h += field('d-extno', 'doc.f.ext_number', inp('d-extno', d.ext_number, 'text', ro));
@@ -213,25 +220,30 @@ function docHead(d, form, ro) {
 }
 var DOCD = null;   // the open document drawer: {doc, form, lines}
 function docDrawer(d) {
-  var form = DOC_FORM[d.doc_type], ro = !d.can_edit;
+  var form = DOC_FORM[d.doc_type], ro = !d.can_edit, sys = d.source === 'system', lro = ro || sys;   // generated ADJ: items / quantities fixed
   DOCD = {doc: d, form: form, lines: (d.lines || []).map(function (l) { return Object.assign({}, l); })};
-  if (!ro && !DOCD.lines.length) DOCD.lines.push({});
-  var acts = (d.actions || []).map(function (a) { return '<button class="' + (a.action === 'post' ? 'primary' : '') + '" data-act="doc-action" data-to="' + esc(a.to_state) + '">' + esc(t(a.label)) + '</button>'; }).join('');
+  if (!lro && !DOCD.lines.length) DOCD.lines.push({});
+  var recv = false, acts = (d.actions || []).map(function (a) {
+    if (a.action === 'receive') { if (recv) return ''; recv = true; return '<button class="primary" data-act="trf-receive">' + esc(t('trf.confirm_receipt')) + '</button>'; }   // one form, by line
+    return '<button class="' + (a.action === 'post' || a.action === 'close' ? 'primary' : '') + '" data-act="doc-action" data-to="' + esc(a.to_state) + '">' + esc(t(a.label)) + '</button>';
+  }).join('');
   drawerOpen({title: t('doc.type.' + d.doc_type) + (d.doc_no ? ' ' + d.doc_no : ''), readOnly: ro,
-    extra: (d.document_id && d.state === 'draft' && d.can_edit ? '<button data-act="doc-delete">' + esc(t('doc.delete')) + '</button>' : '') +
-      (d.document_id && can(docCap(d.doc_type, 'create')) ? '<button data-act="doc-copy">' + esc(t('doc.copy')) + '</button>' : '') + acts,
+    extra: (d.document_id && d.state === 'draft' && d.can_edit && !sys ? '<button data-act="doc-delete">' + esc(t('doc.delete')) + '</button>' : '') +
+      (d.document_id && !sys && can(docCap(d.doc_type, 'create')) ? '<button data-act="doc-copy">' + esc(t('doc.copy')) + '</button>' : '') + acts,
     body: function () {
       var probs = (d.problems || []).length ? '<ul class="problems" id="doc-problems">' + d.problems.map(function (p) {
         return '<li>' + esc((p.line_no ? t('doc.line_n', {n: p.line_no}) + ': ' : '') + p.message) + '</li>'; }).join('') + '</ul>' : '';
-      return '<p>' + stateBadge(d.state || 'draft') + (d.cancel_reason ? ' <span class="muted">' + esc(d.cancel_reason) + '</span>' : '') + '</p>' + docHead(d, form, ro) +
-        '<h2 style="margin-top:14px">' + esc(t('doc.lines')) + '</h2><div id="doc-lines">' + DOCD.lines.map(function (l, i) { return docLineRow(l, i, form, ro); }).join('') + '</div>' +
-        (ro ? '' : '<button class="link" data-act="doc-line-add" id="doc-line-add">' + esc(t('doc.add_line')) + '</button>') +
+      return '<p>' + stateBadge(d.state || 'draft') + (d.cancel_reason ? ' <span class="muted">' + esc(d.cancel_reason) + '</span>' : '') + '</p>' +
+        (sys && d.ref_document_id ? '<p class="msg" id="doc-sys-note">' + esc(t('doc.system_note')) + '</p>' : '') + docHead(d, form, ro) +
+        '<h2 style="margin-top:14px">' + esc(t('doc.lines')) + '</h2><div id="doc-lines">' + DOCD.lines.map(function (l, i) { return docLineRow(l, i, form, lro); }).join('') + '</div>' +
+        (lro ? '' : '<button class="link" data-act="doc-line-add" id="doc-line-add">' + esc(t('doc.add_line')) + '</button>') +
+        (d.doc_type === 'TRF' ? trfSection(d) : '') +
         (d.document_id && form.price ? '<p id="doc-totals"><b>' + esc(t('doc.total_net', {v: eur(d.total_net)})) + '</b></p>' : '') +
         (d.total_cost != null && d.state === 'posted' ? '<p class="muted">' + esc(t('doc.total_cost', {v: eur(d.total_cost)})) + '</p>' : '') +
         (probs ? '<div class="msg" id="doc-problem-box">' + esc(t('doc.problems')) + probs + '</div>' : '');
     },
     save: ro ? null : function () { return api('doc_save_draft', {p_type: d.doc_type, p_doc: docPayload()}, {write: true, key: D.key}); },
-    onSaved: function (doc) { docDrawer(doc); stkLoad(true); }});
+    onSaved: function (doc) { if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else docDrawer(doc); stkLoad(true); }});
 }
 function docReadLines() {
   var rows = document.querySelectorAll('#doc-lines .dline');
@@ -249,7 +261,10 @@ function docPayload() {
   var d = DOCD.doc, form = DOCD.form, p = {}, extra = {};
   if (d.document_id) { p.document_id = d.document_id; p.version = d.version; }
   var wh = (STK.whs || []).find(function (w) { return w.warehouse_id === val('d-wh'); });
-  p.warehouse_id = val('d-wh') || null; p.branch_id = wh ? wh.branch_id : (d.branch_id || (S.me.branches[0] || {}).branch_id || null);
+  p.warehouse_id = $('d-wh') ? (val('d-wh') || null) : (d.warehouse_id || null);
+  p.branch_id = wh ? wh.branch_id : (d.branch_id || (S.me.branches[0] || {}).branch_id || null);
+  if ($('d-dest')) p.dest_warehouse_id = val('d-dest') || null;
+  if ($('d-carrier')) { var dl = {carrier: val('d-carrier').trim(), vehicle: val('d-vehicle').trim()}; if (!dl.carrier) delete dl.carrier; if (!dl.vehicle) delete dl.vehicle; extra.delivery = dl; }
   var dt = parseDate(val('d-date')); if (dt) p.doc_date = dt;
   if ($('d-cp')) p.counterparty_id = val('d-cp') || null;
   if ($('d-extno')) p.ext_number = val('d-extno').trim();
@@ -260,12 +275,14 @@ function docPayload() {
   if ($('d-extref')) p.ext_ref = val('d-extref').trim();
   if ($('d-notes')) p.notes = val('d-notes').trim();
   if (form.head.some(function (f) { return f === 'mark' || f === 'reason' || f === 'cost_centre'; })) p.extra = extra;
+  if (form.head.indexOf('delivery') >= 0) { if (Object.keys(extra.delivery || {}).length) p.extra = {delivery: extra.delivery}; else p.extra = {}; }
   p.lines = docReadLines().filter(function (l) { return l.item_id || l.qty; }).map(function (l) {
     var o = {item_id: l.item_id, qty: l.qty};
     if (l.unit_price !== undefined && l.unit_price !== '') o.unit_price = l.unit_price;
     if (l.discount_pct) o.discount_pct = l.discount_pct;
     if (l.ext_line_ref) o.ext_line_ref = l.ext_line_ref;
     if (l.source_line_id) o.source_line_id = l.source_line_id;
+    if (l.description) o.description = l.description;
     return o;
   });
   return p;
@@ -298,7 +315,7 @@ async function docSaveIfDirty() {
   if (r.ok && r.data) { D.dirty = false; D.key = uuid(); DOCD.doc = r.data; }
   return r;
 }
-function docShow(doc, msg) { drawerClose(true); docDrawer(doc); if (msg) toast(msg); stkLoad(true); }
+function docShow(doc, msg) { drawerClose(true); if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else docDrawer(doc); if (msg) toast(msg); stkLoad(true); }
 async function docAct(to, opts) {
   var btns = document.querySelectorAll('#drawer footer button'); Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
   var s = await docSaveIfDirty();
@@ -306,16 +323,17 @@ async function docAct(to, opts) {
   var r = await api('doc_set_state', {p_document_id: DOCD.doc.document_id, p_to_state: to, p_options: opts || {}}, {write: true});
   Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
   if (!r.ok || !r.data) { drawerMsg(notSaved(r), r.error && Array.isArray(r.error.detail) ? r.error.detail : null); return; }
-  if (to === 'posted' && !r.data.posted && (r.data.warnings || []).length) {   // negative stock: ask, then post with ack
-    var w = r.data.warnings.map(function (x) { return t('doc.warn.negative', {item: x.item_code, wh: x.warehouse_code, qty: qtyTxt(x.qty_after)}); }).join(' ');
-    confirmBox(t('doc.warn.title') + ' ' + w, t('doc.warn.post_anyway'), t('cancel'), function () { docAct('posted', Object.assign({}, opts || {}, {ack_warnings: true})); });
+  var warnTxt = (r.data.warnings || []).map(function (x) { return t('doc.warn.negative', {item: x.item_code, wh: x.warehouse_code, qty: qtyTxt(x.qty_after)}); }).join(' ');
+  if ((to === 'posted' || to === 'dispatched') && !r.data.posted && warnTxt) {   // negative stock: ask, then post / dispatch with ack
+    confirmBox(t('doc.warn.title') + ' ' + warnTxt, t(to === 'dispatched' ? 'trf.dispatch_anyway' : 'doc.warn.post_anyway'), t('cancel'), function () { docAct(to, Object.assign({}, opts || {}, {ack_warnings: true})); });
     return;
   }
-  docShow(r.data.document, t('doc.done.' + to));
+  // F2-12: a cancel that took stock below zero went ahead (audited, alert raised): say so
+  docShow(r.data.document, t('doc.done.' + to) + (to === 'cancelled' && warnTxt ? ' ' + t('doc.warn.after_cancel') + ' ' + warnTxt : ''));
 }
 ACT['doc-action'] = function (el) {
   var to = el.getAttribute('data-to');
-  if (to === 'cancelled') { promptBox(t('doc.cancel_q'), t('doc.f.reason_text'), t('doc.action.cancel'), function (v) { docAct('cancelled', {reason: v}); }, true); return; }
+  if (to === 'cancelled') { promptBox(t(DOCD.doc.doc_type === 'TRF' ? 'trf.cancel_q' : 'doc.cancel_q'), t('doc.f.reason_text'), t('doc.action.cancel'), function (v) { docAct('cancelled', {reason: v}); }, true); return; }
   if (to === 'draft') { promptBox(t('doc.reject_q'), t('doc.f.reason_text'), t('doc.action.reject'), function (v) { docAct('draft', {reason: v}); }, false); return; }
   docAct(to, {});
 };

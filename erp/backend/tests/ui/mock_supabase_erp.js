@@ -25,12 +25,14 @@
   };
   // E150 (T11 / T12) document capabilities + stock.read
   var DOCCAPS = {
-    owner: ['opn.read', 'opn.create', 'opn.approve', 'grn.read', 'grn.create', 'grn.approve', 'adj.read', 'adj.create', 'adj.approve', 'cons.read', 'cons.create', 'cons.approve'],
-    manager: ['opn.read', 'opn.create', 'grn.read', 'grn.create', 'grn.approve', 'adj.read', 'adj.create', 'adj.approve', 'cons.read', 'cons.create', 'cons.approve'],
-    warehouse: ['opn.read', 'grn.read', 'grn.create', 'adj.read', 'adj.create', 'cons.read', 'cons.create'],
-    accounting: ['opn.read', 'grn.read', 'adj.read', 'cons.read'],
+    owner: ['opn.read', 'opn.create', 'opn.approve', 'grn.read', 'grn.create', 'grn.approve', 'adj.read', 'adj.create', 'adj.approve', 'cons.read', 'cons.create', 'cons.approve',
+            'trf.read', 'trf.create', 'trf.approve'],
+    manager: ['opn.read', 'opn.create', 'grn.read', 'grn.create', 'grn.approve', 'adj.read', 'adj.create', 'adj.approve', 'cons.read', 'cons.create', 'cons.approve',
+              'trf.read', 'trf.create', 'trf.approve'],
+    warehouse: ['opn.read', 'grn.read', 'grn.create', 'adj.read', 'adj.create', 'cons.read', 'cons.create', 'trf.read', 'trf.create'],
+    accounting: ['opn.read', 'grn.read', 'adj.read', 'cons.read', 'trf.read'],
     clinic_user: ['cons.read', 'cons.create'],
-    readonly: ['opn.read', 'grn.read', 'adj.read', 'cons.read']
+    readonly: ['opn.read', 'grn.read', 'adj.read', 'cons.read', 'trf.read']
   };
   Object.keys(CAPS).forEach(function (r) { CAPS[r] = CAPS[r].concat(DOCCAPS[r].map(function (c) { return 'doc.' + c; }), ['stock.read']); });
   var BR = [
@@ -81,10 +83,41 @@
                  params: {item_code: 'IT-002', warehouse_code: 'SER-MAIN', qty: '-3.0000', doc_no: 'CONS-SER/000004'}},
                 {alert_id: 'al2', branch_id: 'b1', kind: 'low_stock', severity: 'info', message_key: 'alert.low_stock', created_at: '2026-11-18T07:00:00Z',
                  params: {item_code: 'IT-001', warehouse_code: 'SER-MAIN', qty: '25.0000', min_level: '30.0000'}}];
+  // E160 (T16 / T18): transfers. t1 SER -> THE dispatched (source side for b1); t2 THE -> SER dispatched (b1 receives)
+  DOCS.push({document_id: 't1', doc_type: 'TRF', state: 'dispatched', branch_id: 'b1', warehouse_id: 'w1', warehouse_code: 'SER-MAIN', dest_warehouse_id: 'w2', doc_no: 'TRF-SER/000001',
+             doc_date: '2026-11-16', version: 2, extra: {}, lines: [{line_id: 't1-0', line_no: 1, item_id: 'i1', item_code: 'IT-001', item_name: 'Bracket 1', qty: '4.0000', qty_base: '4.0000'}]},
+            {document_id: 't2', doc_type: 'TRF', state: 'dispatched', branch_id: 'b2', warehouse_id: 'w2', warehouse_code: 'THE-MAIN', dest_warehouse_id: 'w1', doc_no: 'TRF-THE/000003',
+             doc_date: '2026-11-17', version: 2, extra: {}, lines: [{line_id: 't2-0', line_no: 1, item_id: 'i1', item_code: 'IT-001', item_name: 'Bracket 1', qty: '2.0000', qty_base: '2.0000'},
+                                                                 {line_id: 't2-1', line_no: 2, item_id: 'i3', item_code: 'IT-003', item_name: 'Elastic 3', qty: '6.0000', qty_base: '6.0000'}]});
+  var TRFX = {};   // transfer id -> {receipt, recv: {line_id: [qty, reason]}, adj: [doc ids]}
+  var ALLWHS = WHS.concat([{warehouse_id: 'w3', branch_id: 'b3', branch_code: 'ALE', code: 'ALE-MAIN', name: 'Alexandreia main', kind: 'normal', active: true}]);
+  function whBranch(id) { var w = ALLWHS.find(function (x) { return x.warehouse_id === id; }); return w ? w.branch_id : null; }
+  function mine(br) { return ROLE === 'owner' || br === 'b1'; }
+  function trfVisible(d) { return mine(d.branch_id) || (d.state !== 'draft' && mine(whBranch(d.dest_warehouse_id))); }
+  function trfOut(d) {
+    var o = docOut(d), x = TRFX[d.document_id] || {};
+    o.transfer = {source_branch_id: d.branch_id, dest_branch_id: whBranch(d.dest_warehouse_id), dest_warehouse_code: (ALLWHS.find(function (w) { return w.warehouse_id === d.dest_warehouse_id; }) || {}).code,
+      fiscal_needed: whBranch(d.dest_warehouse_id) !== d.branch_id, receipt: x.receipt || null,
+      lines: (d.lines || []).map(function (l) {
+        var r = (x.recv || {})[l.line_id], sent = Number(l.qty), got = r ? r[0] : null, adjDone = (x.adj || []).every(function (id) { return DOCS.find(function (z) { return z.document_id === id; }).state === 'posted'; });
+        return {line_id: l.line_id, line_no: l.line_no, item_id: l.item_id, dispatched_qty: l.qty, received_qty: r ? String(got) : null, diff_qty: r ? String(got - sent) : null, diff_reason: r ? r[1] : null,
+                in_transit: d.state === 'dispatched' ? String(sent) : (d.state === 'received_with_difference' && r && got < sent && !adjDone ? String(sent - got) : '0')};
+      }),
+      adjustments: (x.adj || []).map(function (id) { var a = DOCS.find(function (z) { return z.document_id === id; }); return {document_id: a.document_id, doc_type: a.doc_type, state: a.state, doc_no: a.doc_no}; })};
+    return o;
+  }
   var ITEMBY = {'IT-001': {item_id: 'i1', name: 'Bracket 1'}, 'IT-002': {item_id: 'i2', name: 'Wire 2'}, 'IT-003': {item_id: 'i3', name: 'Elastic 3'}, '4006381333931': {item_id: 'i3', name: 'Elastic 3', code: 'IT-003'}};
-  var DCAP = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons'};
+  var DCAP = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf'};
   function docActions(d) {
     var c = DCAP[d.doc_type], a = [];
+    if (d.doc_type === 'TRF') {
+      var src = mine(d.branch_id), dst = mine(whBranch(d.dest_warehouse_id));
+      if (d.state === 'draft' && src && can('doc.trf.create')) a.push({to_state: 'dispatched', label: 'doc.action.dispatch', action: 'post'});
+      if (d.state === 'dispatched' && dst && can('doc.trf.create')) a.push({to_state: 'received', label: 'doc.action.receive', action: 'receive'},
+                                                                         {to_state: 'received_with_difference', label: 'doc.action.receive_difference', action: 'receive'});
+      if (d.state === 'dispatched' && src && can('doc.trf.approve')) a.push({to_state: 'cancelled', label: 'doc.action.cancel', action: 'cancel'});
+      return a;
+    }
     if (d.state === 'draft' && can('doc.' + c + '.create')) a.push(d.doc_type === 'OPN' && !can('doc.opn.approve') ? {to_state: 'pending_approval', label: 'doc.action.submit', action: 'none'}
                                                                                                          : {to_state: 'posted', label: 'doc.action.post', action: 'post'});
     if (d.state === 'posted' && can('doc.' + c + '.approve')) a.push({to_state: 'cancelled', label: d.doc_type === 'CONS' ? 'doc.action.reverse' : 'doc.action.cancel', action: 'cancel'});
@@ -92,6 +125,7 @@
   }
   function docOut(d) {
     var o = JSON.parse(JSON.stringify(d)); o.actions = docActions(d); o.can_edit = d.state === 'draft' && can('doc.' + DCAP[d.doc_type] + '.create');
+    o.line_count = (d.lines || []).length;
     o.problems = d.state === 'draft' ? (d.lines || []).filter(function (l) { return !l.item_id; }).map(function (l) { return {code: 'required', field: 'item_id', line_no: l.line_no, message: 'Item is required.'}; }) : [];
     if (!can('cost.read')) { delete o.total_cost; (o.lines || []).forEach(function (l) { delete l.cost_value; }); }
     return o;
@@ -238,7 +272,9 @@
       var f = a.p_filter || {}, types = f.doc_type ? [f.doc_type] : (f.doc_types || []);
       types = types.filter(function (x) { return can('doc.' + DCAP[x] + '.read'); });
       if (!types.length) return err('ERP_FORBIDDEN', 'no');
-      var rows = DOCS.filter(function (d) { return types.indexOf(d.doc_type) >= 0 && (!f.state || d.state === f.state); }).map(function (d) { var o = docOut(d); delete o.lines; return o; });
+      var rows = DOCS.filter(function (d) { return types.indexOf(d.doc_type) >= 0 && (!f.state || d.state === f.state) && (d.doc_type !== 'TRF' || trfVisible(d))
+          && (!f.branch_id || d.branch_id === f.branch_id || (d.doc_type === 'TRF' && whBranch(d.dest_warehouse_id) === f.branch_id)); })
+        .map(function (d) { var o = docOut(d); delete o.lines; return o; });
       return {data: page(rows, a, function (r) { return r.document_id; }), error: null};
     },
     doc_get: function (a) { var d = DOCS.find(function (x) { return x.document_id === a.p_document_id; }); if (!d) return err('ERP_TENANT', 'not yours'); return {data: docOut(d), error: null}; },
@@ -263,18 +299,64 @@
       var act = docActions(d).find(function (x) { return x.to_state === a.p_to_state; });
       if (!act) return err('ERP_FORBIDDEN', 'not allowed');
       var o = a.p_options || {};
+      if (d.doc_type === 'TRF' && a.p_to_state === 'dispatched') {
+        if (!d.dest_warehouse_id) return err('ERP_VALIDATION', '1 problem', [{code: 'required', field: 'dest_warehouse_id', message: 'Destination warehouse is required.'}]);
+        var tw = (d.lines || []).filter(function (l) { return (STOCKQ[l.item_id] || 0) - Number(l.qty) < 0; })
+          .map(function (l) { return {code: 'W_STOCK_NEGATIVE', item_id: l.item_id, item_code: l.item_code, warehouse_id: d.warehouse_id, warehouse_code: d.warehouse_code, qty_after: String((STOCKQ[l.item_id] || 0) - Number(l.qty))}; });
+        if (tw.length && !o.ack_warnings) return {data: {posted: false, warnings: tw, document: docOut(d)}, error: null};
+        (d.lines || []).forEach(function (l) { STOCKQ[l.item_id] = (STOCKQ[l.item_id] || 0) - Number(l.qty); });
+        d.state = 'dispatched'; d.doc_no = 'TRF-SER/' + String(NEXTID++).padStart(6, '0'); d.version++;
+        return {data: {posted: true, warnings: tw, document: docOut(d)}, error: null};
+      }
+      if (d.doc_type === 'TRF' && act.action === 'receive') {
+        var recv = {}, diff = false, probs = [];
+        (o.lines || []).forEach(function (x) { recv[x.line_id] = [Number(x.received_qty), x.reason || null]; });
+        (d.lines || []).forEach(function (l) {
+          if (!recv[l.line_id]) recv[l.line_id] = [Number(l.qty), null];
+          if (recv[l.line_id][0] !== Number(l.qty)) { diff = true; if (!recv[l.line_id][1]) probs.push({code: 'required', field: 'reason', line_no: l.line_no, message: 'A difference needs a reason.'}); }
+        });
+        if (!probs.length && diff !== (a.p_to_state === 'received_with_difference')) probs.push({code: 'state', field: 'to_state', message: 'The target state does not match the quantities.'});
+        if (probs.length) return err('ERP_VALIDATION', probs.length + ' problem(s)', probs);
+        var x = TRFX[d.document_id] = {receipt: {receipt_date: o.receipt_date || '2026-11-18', received_at: '2026-11-18T10:00:00Z', received_by_email: 'me@clinic.test', closed_at: null}, recv: recv, adj: []};
+        var short = (d.lines || []).filter(function (l) { return recv[l.line_id][0] < Number(l.qty); });
+        if (short.length) {
+          var adj = {document_id: 'n' + (NEXTID++), doc_type: 'ADJ_OUT', state: 'draft', source: 'system', branch_id: whBranch(d.dest_warehouse_id), warehouse_id: 'wt', warehouse_code: 'TRANSIT',
+                     ref_document_id: d.document_id, doc_no: null, doc_date: x.receipt.receipt_date, version: 1, extra: {reason: 'lost'}, notes: 'Transfer ' + d.doc_no + ': shortage on receipt (out of transit).',
+                     lines: short.map(function (l, i) { return {line_id: 'aj' + i, line_no: i + 1, item_id: l.item_id, item_code: l.item_code, item_name: l.item_name, description: recv[l.line_id][1],
+                                                                qty: String(Number(l.qty) - recv[l.line_id][0]), qty_base: String(Number(l.qty) - recv[l.line_id][0])}; })};
+          DOCS.unshift(adj); x.adj.push(adj.document_id);
+        }
+        d.state = a.p_to_state; d.version++;
+        return {data: {posted: false, warnings: [], receipt: {receipt_date: x.receipt.receipt_date, adjustments: x.adj}, document: docOut(d)}, error: null};
+      }
       if (a.p_to_state === 'cancelled' && !o.reason) return err('ERP_VALIDATION', '1 problem', [{code: 'required', field: 'reason', message: 'A reason is required.'}]);
       if (a.p_to_state === 'posted') {
         var sign = d.doc_type === 'CONS' || d.doc_type === 'ADJ_OUT' ? -1 : 1;
-        var warn = (d.lines || []).filter(function (l) { return sign < 0 && (STOCKQ[l.item_id] || 0) - Number(l.qty) < 0; })
+        var warn = (d.lines || []).filter(function (l) { return sign < 0 && d.warehouse_id !== 'wt' && (STOCKQ[l.item_id] || 0) - Number(l.qty) < 0; })
           .map(function (l) { return {code: 'W_STOCK_NEGATIVE', item_id: l.item_id, item_code: l.item_code, warehouse_id: d.warehouse_id, warehouse_code: d.warehouse_code, qty_after: String((STOCKQ[l.item_id] || 0) - Number(l.qty))}; });
         if (warn.length && !o.ack_warnings) return {data: {posted: false, warnings: warn, document: docOut(d)}, error: null};
-        (d.lines || []).forEach(function (l) { STOCKQ[l.item_id] = (STOCKQ[l.item_id] || 0) + sign * Number(l.qty); });
+        if (d.warehouse_id !== 'wt') (d.lines || []).forEach(function (l) { STOCKQ[l.item_id] = (STOCKQ[l.item_id] || 0) + sign * Number(l.qty); });
         d.state = 'posted'; d.doc_no = d.doc_type + '-SER/' + String(NEXTID++).padStart(6, '0'); d.version++;
+        var parent = d.ref_document_id && DOCS.find(function (z) { return z.document_id === d.ref_document_id && z.doc_type === 'TRF'; });
+        if (parent && TRFX[parent.document_id].adj.every(function (id) { return DOCS.find(function (z) { return z.document_id === id; }).state === 'posted'; })) {
+          parent.state = 'closed'; parent.version++; TRFX[parent.document_id].receipt.closed_at = '2026-11-18T11:00:00Z';
+        }
         return {data: {posted: true, warnings: warn, document: docOut(d)}, error: null};
       }
       d.state = a.p_to_state; if (o.reason) d.cancel_reason = o.reason; d.version++;
       return {data: {posted: false, warnings: [], document: docOut(d)}, error: null};
+    },
+    trf_get: function (a) {
+      if (!can('doc.trf.read')) return err('ERP_FORBIDDEN', 'no');
+      var d = DOCS.find(function (x) { return x.document_id === a.p_document_id; });
+      if (!d) return err('ERP_TENANT', 'not yours');
+      if (d.doc_type !== 'TRF') return err('ERP_VALIDATION', '1 problem', [{code: 'invalid', field: 'p_document_id', message: 'Not a transfer.'}]);
+      if (!trfVisible(d)) return err('ERP_FORBIDDEN', 'no');
+      return {data: trfOut(d), error: null};
+    },
+    trf_warehouses: function () {
+      if (!can('doc.trf.read')) return err('ERP_FORBIDDEN', 'no');
+      return {data: {rows: ALLWHS.map(function (w) { return {warehouse_id: w.warehouse_id, branch_id: w.branch_id, branch_code: w.branch_code, code: w.code, name: w.name, active: w.active}; })}, error: null};
     },
     doc_delete_draft: function (a) { var i = DOCS.findIndex(function (x) { return x.document_id === a.p_document_id; }); DOCS.splice(i, 1); return {data: {deleted: true}, error: null}; },
     doc_copy: function (a) {

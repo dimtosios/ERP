@@ -159,6 +159,52 @@ with sync_playwright() as p:
     check(psql("select b.qty || '/' || (select count(*) from erp.alerts a where a.tenant_id = b.tenant_id and a.kind = 'negative_stock' and a.resolved_at is null) "
                "from erp.stock_balances b join erp.tenants t using (tenant_id) where t.code = 'uitest';")[1].strip() == "-2.0000/1",
           "stock: Post anyway -> balance -2 and one negative-stock alert in the DB")
+    pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
+    # transfers against the real database (T18): SER -> THE, dispatch past zero (ack), receipt short by 2 with a reason,
+    # the generated ADJ_OUT out of TRANSIT posted -> the transfer closes, transit empty, integrity clean
+    TQ = "from erp.documents d join erp.tenants t using (tenant_id) where t.code = 'uitest' and d.doc_type = "
+    psql("insert into erp.branches (tenant_id, code, name, establishment_no) select tenant_id, 'THE', 'Thessaloniki', 1 from erp.tenants where code = 'uitest';\n"
+         "insert into erp.warehouses (tenant_id, branch_id, code, name) select b.tenant_id, b.branch_id, 'THE-MAIN', 'Thessaloniki main' from erp.branches b "
+         "join erp.tenants t using (tenant_id) where t.code = 'uitest' and b.code = 'THE';\n")
+    pg.goto(html.as_uri() + "#/master/series"); pg.reload(); pg.wait_for_selector("#s-def-go")   # whoami again (new branch); its series: the ADJ takes a number
+    pg.wait_for_function("__calls.filter(c => c.name === 'series_list').length >= 1")
+    pg.select_option("#s-def-branch", value=psql("select branch_id from erp.branches where code = 'THE';")[1].strip())
+    pg.click("#s-def-go"); pg.wait_for_function("__calls.filter(c => c.name === 'series_create_defaults').length >= 1")
+    for _ in range(60):
+        if psql("select count(*) from erp.series s join erp.branches b using (tenant_id, branch_id) where b.code = 'THE';")[1].strip() not in ("", "0"):
+            break
+        pg.wait_for_timeout(250)
+    pg.goto(html.as_uri() + "#/transfers"); pg.wait_for_selector("#trf-new")
+    pg.click("#trf-new"); pg.wait_for_selector("#d-dest")
+    pg.select_option("#d-wh", label="SER-MAIN · Serres main"); pg.select_option("#d-dest", label="THE-MAIN · Thessaloniki main (THE)")
+    pg.fill("#doc-lines .dl-code", "BR-1"); pg.press("#doc-lines .dl-code", "Tab")
+    pg.wait_for_function("document.querySelector('#doc-lines .dl-name').textContent.indexOf('Bracket') >= 0"); pg.fill("#doc-lines .dl-qty", "5")
+    pg.click("#d-save"); pg.wait_for_selector("#drawer footer [data-act=doc-action][data-to=dispatched]")
+    check("not a fiscal document" in pg.inner_text("#trf-fiscal") and "establishments" in pg.inner_text("#trf-fiscal"), "transfer: trf_get fiscal note, fiscal_needed between SER and THE")
+    pg.click("#drawer footer [data-act=doc-action][data-to=dispatched]"); pg.wait_for_selector("#modal-text")
+    check("BR-1" in pg.inner_text("#modal-text") and "-7" in pg.inner_text("#modal-text"), "transfer: the real negative-stock warning on dispatch")
+    pg.click("#modal-ok")
+    pg.wait_for_function("document.getElementById('drawer') && document.getElementById('drawer').textContent.indexOf('Dispatched') >= 0")
+    tw = "(select warehouse_id from erp.warehouses w join erp.tenants t using (tenant_id) where t.code = 'uitest' and w.kind = 'in_transit')"
+    check(psql("select d.state || '/' || d.doc_no || '/' || (select qty from erp.stock_balances where warehouse_id = %s) %s 'TRF';" % (tw, TQ))[1].strip().startswith("dispatched/TRF")
+          and psql("select qty from erp.stock_balances where warehouse_id = %s;" % tw)[1].strip() == "5.0000", "transfer: dispatched with a number, 5 in transit")
+    pg.click("#drawer footer [data-act=trf-receive]"); pg.wait_for_selector("#rc-lines")
+    pg.fill("#rc-lines .rc-qty", "3"); pg.fill("#rc-lines .rc-reason", "2 broken"); pg.click("#trf-receive-go")
+    pg.wait_for_function("document.getElementById('trf-adjs') && document.getElementById('drawer').textContent.indexOf('Received with difference') >= 0")
+    check(psql("select (select string_agg(w.code || '=' || b.qty, ',' order by w.code) from erp.stock_balances b join erp.warehouses w using (tenant_id, warehouse_id) "
+               "where b.tenant_id = d.tenant_id and w.code in ('THE-MAIN', 'TRANSIT')) || '/' || (select a.state from erp.documents a where a.ref_document_id = d.document_id and a.doc_type = 'ADJ_OUT') "
+               "%s 'TRF';" % TQ)[1].strip() == "THE-MAIN=3.0000,TRANSIT=2.0000/draft",
+          "receipt by line: 3 in THE-MAIN, the shortage of 2 stays in transit, ADJ_OUT draft generated")
+    pg.click("#trf-adjs a[data-act=stk-doc]"); pg.wait_for_selector("#d-wh-ro")
+    check(pg.input_value("#d-wh-ro") == "TRANSIT" and pg.locator("#doc-lines .dl-code[disabled]").count() == 1, "generated ADJ_OUT: TRANSIT read-only, lines fixed")
+    pg.click("#drawer footer [data-act=doc-action][data-to=posted]")
+    pg.wait_for_function("document.getElementById('drawer') && document.getElementById('drawer').textContent.indexOf('Posted') >= 0")
+    check(psql("select d.state || '/' || (select qty from erp.stock_balances where warehouse_id = %s) || '/' || jsonb_array_length(erp.trf_integrity(d.tenant_id)) "
+               "|| '/' || jsonb_array_length(erp.stock_integrity(d.tenant_id)) %s 'TRF';" % (tw, TQ))[1].strip() == "closed/0.0000/0/0",
+          "ADJ_OUT posted: the transfer is closed, transit empty, transfer + stock integrity clean")
+    pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
+    pg.wait_for_function("document.getElementById('trf-table') && document.getElementById('trf-table').textContent.indexOf('Closed') >= 0")
+    check("THE-MAIN" in pg.inner_text("#trf-table"), "transfers list: closed, destination code")
     pg.context.close()
 
     pg = page(br, ANNA, "anna@ui.test")

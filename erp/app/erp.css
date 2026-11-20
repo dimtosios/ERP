@@ -76,5 +76,7 @@ tr.click{cursor:pointer} tr.click:hover{background:var(--surface2)}
 .dline input.dl-qty,.dline input.dl-price,.dline input.dl-disc{width:96px}
 .dline input.dl-ref{width:140px}
 .dline .dl-amt{min-width:80px;text-align:right}
+.dline input.rc-reason{flex:1 1 180px;min-width:0}
+.drawer footer{flex-wrap:wrap}
 @media (max-width:600px){.top{padding:8px 12px}.main{padding:12px}
   .dline input.dl-qty,.dline input.dl-price,.dline input.dl-disc{width:calc(33% - 6px)}}

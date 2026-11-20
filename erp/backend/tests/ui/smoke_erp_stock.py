@@ -47,7 +47,7 @@ with sync_playwright() as p:
 
     # ---------- owner: on hand, card ----------
     pg = page(br, "owner")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Admin"], "owner nav: Home, Master data, Stock, Admin")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Admin"], "owner nav: Home, Master data, Stock, Transfers, Admin")
     check(pg.locator("#stk-tabs a").all_inner_texts() == ["On hand", "Documents", "Negative stock", "Alerts"], "stock tabs")
     wait_text(pg, "#stk-table", "IT-002")
     txt = pg.inner_text("#stk-table")

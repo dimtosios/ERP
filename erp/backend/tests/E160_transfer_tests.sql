@@ -435,5 +435,19 @@ select t.ok(jsonb_array_length(erp.stock_integrity(t.a())) = 0 and jsonb_array_l
             and not exists (select 1 from erp.alerts where tenant_id = t.a() and kind = 'integrity' and resolved_at is null),
             'stock + transit integrity clean; the nightly job raises no integrity alert for the tenant');
 
+-- T18: trf_warehouses = the destinations of EVERY branch (the screen's picker), never the transit warehouse or tenant B
+set local role authenticated;
+select t.as(3);
+select t.keep(erp_api.trf_warehouses());
+select t.ok((select string_agg(r ->> 'code', ',' order by r ->> 'code') from jsonb_array_elements(t.j() -> 'rows') r) like '%W1,W1B,W2,W3%'
+            and not exists (select 1 from jsonb_array_elements(t.j() -> 'rows') r where (r ->> 'warehouse_id')::uuid in (t.tw(), t.wh('BW')))
+            and (select r ->> 'branch_code' from jsonb_array_elements(t.j() -> 'rows') r where r ->> 'code' = 'W3') = 'A3',
+            'trf_warehouses (warehouse of A1): warehouses of every branch with the branch code, not the transit warehouse, nothing of tenant B');
+select t.as(6);
+select t.ok(jsonb_array_length(erp_api.trf_warehouses() -> 'rows') >= 4, 'trf_warehouses: readonly (doc.trf.read) reads it');
+select t.as(5);
+select t.fails('select erp_api.trf_warehouses()', 'ERP_FORBIDDEN', 'trf_warehouses: clinic_user (no doc.trf.read) refused');
+reset role;
+
 select 'ALL TESTS PASSED' as result, count(*) as checks from t.passes;
 rollback;

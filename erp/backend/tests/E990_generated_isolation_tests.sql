@@ -349,7 +349,8 @@ do $do$ begin   -- E150 rows (T11 / T12)
   if to_regprocedure('erp_api.trf_get(uuid)') is not null then   -- E160 T16
     insert into t.rpc (fn, cap, call, cross_call) values
       ('erp_api.trf_get(uuid)', 'doc.trf.read', $$select erp_api.trf_get(t.bid('select document_id from erp.documents where notes = ''A transfer'''))$$,
-         $$select erp_api.trf_get(t.bid('select document_id from erp.documents where notes = ''B transfer'''))$$);
+         $$select erp_api.trf_get(t.bid('select document_id from erp.documents where notes = ''B transfer'''))$$),
+      ('erp_api.trf_warehouses()', 'doc.trf.read', $$select erp_api.trf_warehouses()$$, null);   -- T18: destinations of every branch
   end if;
   if to_regprocedure('erp_api.recost_status()') is not null then   -- E140 T13
     insert into t.rpc (fn, cap, call, cross_call) values

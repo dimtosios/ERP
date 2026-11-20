@@ -351,6 +351,11 @@ dest_warehouse_code, fiscal_needed, receipt: {receipt_date, received_at, receive
 [{line_id, line_no, item_id, dispatched_qty, received_qty, diff_qty, diff_reason, in_transit}], adjustments:
 [{document_id, doc_type, state, doc_no}]}`. Not a transfer: `ERP_VALIDATION`.
 
+### `trf_warehouses() -> {rows: [{warehouse_id, branch_id, branch_code, code, name, active}]}` (T18)
+Cap `doc.trf.read` (any branch). The normal warehouses of EVERY branch of the tenant (never the transit warehouse),
+inactive ones too (`active` = warehouse and branch active): the destination picker of the Transfers screen and the
+"To" column of its list (`warehouse_list` shows only the caller's branches). Codes and names only.
+
 Example (receipt with a difference):
 ```
 doc_set_state('…trf id…', 'received_with_difference',
@@ -372,6 +377,7 @@ doc_set_state('…trf id…', 'received_with_difference',
 | Stock > Documents | `doc_list` (types OPN / GRN / ADJ_IN / ADJ_OUT / CONS the caller reads), New: `doc_save_draft` (lines: `item_lookup` by code / barcode), `doc_get`, buttons from the document's `actions` -> `doc_set_state` (post; warnings dialog -> again with `ack_warnings`; cancel / reject with a reason), `doc_delete_draft`, `doc_copy`; "Import opening stock": `opening_import` (check, then the OPN draft) | the type's `.read` / `.create`; import: `doc.opn.create` |
 | Stock > Negative stock | `report_negative_stock` | `stock.read` |
 | Stock > Alerts | `alert_list`, `alert_resolve` | `alert.read` / `alert.resolve` |
+| Transfers (T18) | `doc_list` (`doc_type: TRF`, filters `state`, `branch_id`; keyset), `trf_warehouses`, `warehouse_list` (source), row -> `trf_get` drawer (the stock document drawer: source / destination / delivery, lines by `item_lookup`; buttons from `actions`: Dispatch -> `doc_set_state('dispatched')` with the warnings dialog -> `ack_warnings`, Cancel with a reason); "Confirm receipt" (one button for the two receive actions) -> receipt form by line -> `doc_set_state('received' \| 'received_with_difference', {receipt_date, lines})`; generated adjustments open in the stock drawer (`doc_get`; TRANSIT warehouse and lines read-only) | menu `doc.trf.read`; New: `doc.trf.create`; buttons from `actions` |
 Admin menu entry: any of `member.read`, `branch.write`, `tenant.settings.read` (owner, manager, accounting).
 Master data menu entry: any of `item.read`, `warehouse.read`, `counterparty.read`, `series.read` (every role).
 All calls go through `api()` (00_core.js): idempotency key per drawer (renewed after a success), 8 s timeout,

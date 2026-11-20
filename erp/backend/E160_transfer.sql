@@ -518,6 +518,23 @@ begin
                                from erp.documents a where a.tenant_id = m.tenant_id and a.document_id in (t.adj_out_id, t.adj_in_id)), '[]'::jsonb)));
 end $$;
 
+-- trf_warehouses (T18): the warehouses a transfer can name, of EVERY branch of the tenant (warehouse_list shows only
+-- the caller's branches, but a destination is usually another clinic). Normal warehouses only (never the transit
+-- warehouse), inactive ones too (flag `active`: the picker offers the active ones; the list labels old transfers).
+-- Cap doc.trf.read on any branch. Codes / names only: no stock, no cost.
+create or replace function erp_api.trf_warehouses() returns jsonb
+language plpgsql stable security definer set search_path = '' set statement_timeout = '8s' as $$
+declare m erp.members;
+begin
+  m := erp.require_member();
+  perform erp.require_cap('doc.trf.read');
+  return jsonb_build_object('rows', coalesce((
+    select jsonb_agg(jsonb_build_object('warehouse_id', w.warehouse_id, 'branch_id', w.branch_id, 'branch_code', b.code, 'code', w.code, 'name', w.name,
+                                        'active', w.active and b.active) order by lower(w.code), w.warehouse_id)
+      from erp.warehouses w join erp.branches b on b.tenant_id = w.tenant_id and b.branch_id = w.branch_id
+     where w.tenant_id = m.tenant_id and w.kind = 'normal'), '[]'::jsonb));
+end $$;
+
 -- ---------------------------------------------------------------------
 -- 9. RLS + grants (receipt rows: tenant + the transfer is visible: documents policy, as document_lines)
 -- ---------------------------------------------------------------------
@@ -545,3 +562,4 @@ grant select on erp.doc_trf, erp.doc_trf_lines to authenticated;
 
 select erp.lock_down();
 grant execute on function erp_api.trf_get(uuid) to authenticated;
+grant execute on function erp_api.trf_warehouses() to authenticated;

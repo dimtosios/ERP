@@ -118,10 +118,21 @@ Short implementation log for Fable. The CRM's `ARCHITECT_STATE.md` is not touche
   (receive vs cancel both orders; two dispatches draining one stock under block / warn; gapless), `tests/
   mutation_transfer.sh` (5 broken copies, all killed; runner mode A). E990 registry + B fixtures (doc_trf, doc_trf_lines).
 
+- T18-lite transfer screen (`erp/app/35_transfers.js`; stocktake NOT included): "Transfers" menu (`doc.trf.read`),
+  list (`doc_list` TRF, keyset, filters state / branch, badges per state), the transfer drawer = the stock document
+  drawer (DOC_FORM.TRF: source, destination of any branch, delivery carrier / vehicle, lines by code / barcode, no
+  price; Dispatch with the negative-stock dialog "Dispatch anyway" -> `ack_warnings`; Cancel with a reason), transfer
+  section from `trf_get` (fiscal note, per-line sent / received / difference / reason / in transit, generated
+  adjustments with state, "closed after the adjustment is posted"), receipt form BY LINE (phone width; to_state from
+  the quantities; a difference needs a reason). Generated ADJ open in the stock drawer: TRANSIT warehouse read-only,
+  lines fixed, no delete / copy. Cancel warnings shown (F2-12). New read RPC `trf_warehouses` (E160; E160 suite +3
+  checks = 97, E990 registry case). Strings for every TRF state / action label + `ERP_APPEND_ONLY`. Smoke: stub
+  `smoke_erp_transfers.py` (32 checks) + real DB (`smoke_erp_db.py` 22 checks: dispatch past zero, short receipt,
+  ADJ_OUT posted, transfer closed, transit 0, integrity clean); owner nav checks of the other smokes now include Transfers.
+
 ## Next
-- T16 done on `erp-dev` (not live). Next: T17 (E170 STK), then T18 (transfer + stocktake screens: strings for the TRF
-  action labels, receipt-by-line form, the generated ADJ drawer with the TRANSIT warehouse read-only, cancel warnings
-  F2-12), then checkpoint **F3** (05: transit always zero for closed transfers, stocktake freeze, approvals). TRF on live
+- T18-lite done on `main` of the ERP repo (not live; clinics try it on a scratch / test project only). Next: the
+  expenses screens task (lite); then T17 (E170 STK) + the stocktake half of T18, then checkpoint **F3** (05: transit always zero for closed transfers, stocktake freeze, approvals). TRF on live
   only after F3 AND the accountant's answer on assumption 82 (fiscal movement document between clinics).
 - (unchanged) Live: C0 (REVIEW_F1 section 4, after the owner confirms the Auth settings), then G1, then C1
   (REVIEW_F2 section 6) and the C2 pilot (GRN / CONS / ADJ in one clinic). Checkpoint FC (T44) before T45-T47.
@@ -423,4 +434,28 @@ attacked at F1 (E991) and hold.
     vacuums before EACH fuzz run: the replay's layer give-back update (E140 `cost_replay`) got a pathological plan in the
     queue fuzz once the test database grew (F2-15 class, test environment; RISK for F3: make that statement plan-robust).
     Re-running E130 ALONE after E140 restores E130's `doc_value` (pre-existing; run lists always run the whole list).
-
+86. [NEW T18-lite] Destination picker = new read RPC `trf_warehouses` (cap `doc.trf.read`, every branch, codes / names
+    only, never transit): a branch-scoped warehouse member cannot see other branches' warehouses in `warehouse_list`,
+    and the destination is usually another clinic. Readers (accounting / readonly) also get the codes (for the "To"
+    column). [UNCERTAIN: showing other clinics' warehouse codes to every TRF reader; alternative = a `dest_code`
+    column in `doc_list` rows.]
+87. [NEW T18-lite] One "Confirm receipt" button stands for the two receive actions (`receive`, `receive_difference`);
+    the form picks the state from the quantities (any line differing -> `received_with_difference`), sends every line
+    (`received_qty` as typed, `reason` only for a differing line) and checks "a difference needs a reason" locally
+    before the call (the server re-checks). Receipt date defaults to the member's today (dd/mm/yyyy, sent ISO).
+88. [NEW T18-lite] The transfer drawer reuses the stock document drawer (30_stock.js) instead of a second drawer:
+    saving / acting reopens a TRF through `trf_get` (the transfer section needs it). A warehouse not in the caller's
+    `warehouse_list` (the other branch's source, the TRANSIT warehouse of a generated ADJ_OUT) is shown as read-only
+    text; a `source = system` document (generated ADJ) keeps warehouse / branch / lines (+ line description) as
+    loaded, hides Add line / Delete / Copy, and lets reason / notes / date change. Copy stays on a TRF (server
+    `doc_copy`).
+89. [NEW T18-lite] Fiscal note: every transfer shows "Internal transfer, not a fiscal document (v1)"; when `trf_get`
+    says `fiscal_needed` a second sentence says the fiscal movement document comes later (STATE 82, accountant). The
+    screen does not block anything on it.
+90. [NEW T18-lite] Mock (`mock_supabase_erp.js`) emulates TRF: source / destination visibility (dest only once
+    dispatched), actions per side, dispatch warnings, receipt with a generated ADJ_OUT (TRANSIT, no stock check), the
+    auto-close after its post. The real-DB smoke creates the second branch's series through Master data > Series
+    after a reload (`whoami` is read once per page load: a branch created in another tab appears after a reload).
+    The first full run had ONE failure of `smoke_erp_transfers.py` (a JS error inside a wait predicate, not reproduced
+    in 9 reruns, 6 of them in parallel): the `d-msg` waits are now null-safe and the smoke turns any exception into a
+    FAIL line with its message (the runner shows FAIL lines), so a recurrence names its step. [RISK: watch it.]

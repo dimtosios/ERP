@@ -29,7 +29,7 @@ erp/backend/tests/golden/               valuation cases as CSV (input moves, exp
 erp/backend/tests/load/                 gen_erp_load.sql, measure_erp.py, RESULTS.md
 erp/backend/tests/ui/                   Playwright smoke + mock_supabase_erp.js
 erp/backend/run_erp_tests.sh            runs all E files and suites TWICE, exits 1 on failure
-erp/app/00_core.js 10_master.js 20_documents.js 30_stock.js 40_purchasing.js 50_sales.js 60_money.js
+erp/app/00_core.js 10_master.js 20_documents.js 30_stock.js 35_transfers.js 40_purchasing.js 50_sales.js 60_money.js
         70_fiscal.js 80_reports.js 90_admin.js    strings.en.js    erp.css    shell.html
 erp/build_erp.py                        shell.html + css + strings + app/*.js (name order) -> erp.html (repo root)
 backend/supabase/functions/erp-*/       Edge Functions, NEW folders only; shared code in _shared/erp-providers/ (new)
