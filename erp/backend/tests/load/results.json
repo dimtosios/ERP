@@ -1,0 +1,585 @@
+{
+ "backdate": [
+  {
+   "later_moves": 2000,
+   "ms": 1431.0,
+   "queued": false,
+   "revisions": 1773
+  },
+  {
+   "later_moves": 2000,
+   "ms": 1441.0,
+   "queued": false,
+   "revisions": 1773
+  },
+  {
+   "later_moves": 2000,
+   "ms": 1006.9,
+   "queued": false,
+   "revisions": 1773
+  },
+  {
+   "later_moves": 2000,
+   "ms": 1280.7,
+   "queued": false,
+   "revisions": 1773
+  },
+  {
+   "later_moves": 2000,
+   "ms": 1229.3,
+   "queued": false,
+   "revisions": 1773
+  }
+ ],
+ "bench": {
+  "aborted_clients": 0,
+  "checks": {
+   "integrity": {
+    "load_s01": 0,
+    "load_s02": 0,
+    "load_s03": 0,
+    "load_s04": 0,
+    "load_s05": 0,
+    "load_s06": 0,
+    "load_s07": 0,
+    "load_s08": 0,
+    "load_s09": 0,
+    "load_s10": 0,
+    "load_s11": 0,
+    "load_s12": 0,
+    "load_s13": 0,
+    "load_s14": 0,
+    "load_s15": 0,
+    "load_s16": 0,
+    "load_s17": 0,
+    "load_s18": 0,
+    "load_std": 0
+   },
+   "recost_queue": 0,
+   "series": [
+    {
+     "distinct": 2000,
+     "gapless": true,
+     "max": 2000,
+     "min": 1,
+     "posted": 2000,
+     "series": "ADJ_IN-BR1"
+    },
+    {
+     "distinct": 2000,
+     "gapless": true,
+     "max": 2000,
+     "min": 1,
+     "posted": 2000,
+     "series": "ADJ_OUT-BR1"
+    },
+    {
+     "distinct": 13331,
+     "gapless": true,
+     "max": 13331,
+     "min": 1,
+     "posted": 13331,
+     "series": "CONS-BR1"
+    },
+    {
+     "distinct": 2000,
+     "gapless": true,
+     "max": 2000,
+     "min": 1,
+     "posted": 2000,
+     "series": "CONS-BR2"
+    },
+    {
+     "distinct": 6000,
+     "gapless": true,
+     "max": 6000,
+     "min": 1,
+     "posted": 6000,
+     "series": "CONS-BR3"
+    },
+    {
+     "distinct": 6904,
+     "gapless": true,
+     "max": 6904,
+     "min": 1,
+     "posted": 6904,
+     "series": "GRN-BR1"
+    },
+    {
+     "distinct": 4000,
+     "gapless": true,
+     "max": 4000,
+     "min": 1,
+     "posted": 4000,
+     "series": "GRN-BR2"
+    },
+    {
+     "distinct": 10,
+     "gapless": true,
+     "max": 10,
+     "min": 1,
+     "posted": 10,
+     "series": "OPN"
+    }
+   ],
+   "unposted_drafts_bench": 0
+  },
+  "clients": 50,
+  "deadlocks": 0,
+  "errors": [],
+  "exit": 0,
+  "failed": "0",
+  "latency_avg_ms": "1650.638",
+  "posted_documents": 3364,
+  "rollbacks": 320,
+  "seconds": 120,
+  "tps": "30.291321",
+  "transactions": "3684"
+ },
+ "bench_output": "pgbench (16.15 (Ubuntu 16.15-0ubuntu0.24.04.1))\ntransaction type: multiple scripts\nscaling factor: 1\nquery mode: simple\nnumber of clients: 50\nnumber of threads: 2\nmaximum number of tries: 1\nduration: 120 s\nnumber of transactions actually processed: 3684\nnumber of failed transactions: 0 (0.000%)\nlatency average = 1650.638 ms\ninitial connection time = 72.065 ms\ntps = 30.291321 (without initial connection time)\nSQL script 1: pgbench_cons.sql\n - weight: 6 (targets 60.0% of total)\n - 2246 transactions (61.0% of total, tps = 18.467510)\n - number of failed transactions: 0 (0.000%)\n - latency average = 2248.195 ms\n - latency stddev = 2885.316 ms\nSQL script 2: pgbench_grn.sql\n - weight: 3 (targets 30.0% of total)\n - 1118 transactions (30.3% of total, tps = 9.192643)\n - number of failed transactions: 0 (0.000%)\n - latency average = 139.543 ms\n - latency stddev = 162.942 ms\nSQL script 3: pgbench_rollback.sql\n - weight: 1 (targets 10.0% of total)\n - 320 transactions (8.7% of total, tps = 2.631168)\n - number of failed transactions: 0 (0.000%)\n - latency average = 2599.731 ms\n - latency stddev = 3143.211 ms\n",
+ "commit": "bb74fe6 + uncommitted E-file changes",
+ "db": "erp_load",
+ "host": {
+  "cpus": 2,
+  "mem_gb": 7.8,
+  "shared_buffers": "128MB"
+ },
+ "integrity_final": {
+  "load_s01": 0,
+  "load_s02": 0,
+  "load_s03": 0,
+  "load_s04": 0,
+  "load_s05": 0,
+  "load_s06": 0,
+  "load_s07": 0,
+  "load_s08": 0,
+  "load_s09": 0,
+  "load_s10": 0,
+  "load_s11": 0,
+  "load_s12": 0,
+  "load_s13": 0,
+  "load_s14": 0,
+  "load_s15": 0,
+  "load_s16": 0,
+  "load_s17": 0,
+  "load_s18": 0,
+  "load_std": 0
+ },
+ "posts": {
+  "doc_save_draft_20": {
+   "max": 43.7,
+   "n": 50,
+   "p50": 16.9,
+   "p95": 21.1
+  },
+  "post_cons_20": {
+   "max": 125.3,
+   "n": 25,
+   "p50": 28.0,
+   "p95": 38.9
+  },
+  "post_grn_20": {
+   "max": 35.8,
+   "n": 25,
+   "p50": 28.3,
+   "p95": 35.1
+  }
+ },
+ "reads_s01": {
+  "doc_list_first": {
+   "max": 9.7,
+   "n": 50,
+   "p50": 6.0,
+   "p95": 7.0
+  },
+  "doc_list_month": {
+   "max": 10.2,
+   "n": 50,
+   "p50": 7.1,
+   "p95": 9.2
+  },
+  "doc_list_page5": {
+   "max": 17.7,
+   "n": 50,
+   "p50": 8.4,
+   "p95": 11.6
+  },
+  "doc_list_type_state": {
+   "max": 11.4,
+   "n": 50,
+   "p50": 6.1,
+   "p95": 8.5
+  },
+  "item_availability": {
+   "max": 5.3,
+   "n": 50,
+   "p50": 2.7,
+   "p95": 3.7
+  },
+  "item_lookup_barcode": {
+   "max": 13.3,
+   "n": 50,
+   "p50": 1.4,
+   "p95": 2.8
+  },
+  "item_lookup_code": {
+   "max": 2.2,
+   "n": 50,
+   "p50": 1.5,
+   "p95": 1.7
+  },
+  "item_lookup_name": {
+   "max": 2.4,
+   "n": 50,
+   "p50": 1.6,
+   "p95": 2.2
+  },
+  "item_lookup_prefix": {
+   "max": 3.9,
+   "n": 50,
+   "p50": 1.7,
+   "p95": 2.2
+  },
+  "recost_status": {
+   "max": 0.9,
+   "n": 50,
+   "p50": 0.2,
+   "p95": 0.6
+  },
+  "report_negative_stock": {
+   "max": 9.7,
+   "n": 50,
+   "p50": 3.4,
+   "p95": 6.3
+  },
+  "stock_card_hot": {
+   "max": 5.7,
+   "n": 50,
+   "p50": 1.5,
+   "p95": 4.8
+  },
+  "stock_card_hot_last": {
+   "max": 1.9,
+   "n": 50,
+   "p50": 1.6,
+   "p95": 1.9
+  },
+  "stock_card_item": {
+   "max": 9.2,
+   "n": 50,
+   "p50": 2.2,
+   "p95": 6.3
+  },
+  "stock_on_hand_page": {
+   "max": 8.8,
+   "n": 50,
+   "p50": 6.7,
+   "p95": 7.2
+  },
+  "stock_on_hand_q": {
+   "max": 7.0,
+   "n": 50,
+   "p50": 2.8,
+   "p95": 3.5
+  }
+ },
+ "reads_std": {
+  "doc_get_20": {
+   "max": 14.6,
+   "n": 200,
+   "p50": 7.2,
+   "p95": 10.5
+  },
+  "doc_list_first": {
+   "max": 11.6,
+   "n": 200,
+   "p50": 5.9,
+   "p95": 7.5
+  },
+  "doc_list_month": {
+   "max": 10.1,
+   "n": 200,
+   "p50": 7.9,
+   "p95": 8.6
+  },
+  "doc_list_page5": {
+   "max": 18.0,
+   "n": 200,
+   "p50": 6.1,
+   "p95": 9.2
+  },
+  "doc_list_type_state": {
+   "max": 14.0,
+   "n": 200,
+   "p50": 7.2,
+   "p95": 9.6
+  },
+  "item_availability": {
+   "max": 32.5,
+   "n": 200,
+   "p50": 12.9,
+   "p95": 24.7
+  },
+  "item_lookup_barcode": {
+   "max": 7.4,
+   "n": 200,
+   "p50": 6.1,
+   "p95": 6.7
+  },
+  "item_lookup_code": {
+   "max": 19.4,
+   "n": 200,
+   "p50": 5.5,
+   "p95": 8.4
+  },
+  "item_lookup_name": {
+   "max": 8.4,
+   "n": 200,
+   "p50": 5.3,
+   "p95": 7.1
+  },
+  "item_lookup_prefix": {
+   "max": 13.6,
+   "n": 200,
+   "p50": 4.3,
+   "p95": 7.5
+  },
+  "recost_status": {
+   "max": 1.3,
+   "n": 50,
+   "p50": 0.2,
+   "p95": 0.6
+  },
+  "report_negative_stock": {
+   "max": 71.5,
+   "n": 50,
+   "p50": 49.3,
+   "p95": 68.2
+  },
+  "stock_card_hot": {
+   "max": 21.7,
+   "n": 200,
+   "p50": 11.3,
+   "p95": 16.1
+  },
+  "stock_card_hot_last": {
+   "max": 25.7,
+   "n": 200,
+   "p50": 15.7,
+   "p95": 23.1
+  },
+  "stock_card_item": {
+   "max": 10.3,
+   "n": 200,
+   "p50": 3.6,
+   "p95": 4.7
+  },
+  "stock_on_hand_page": {
+   "max": 34.9,
+   "n": 200,
+   "p50": 22.0,
+   "p95": 33.9
+  },
+  "stock_on_hand_q": {
+   "max": 48.8,
+   "n": 200,
+   "p50": 27.9,
+   "p95": 37.9
+  }
+ },
+ "replay": [
+  {
+   "moves": 2000,
+   "ms": 996.5
+  },
+  {
+   "moves": 2000,
+   "ms": 981.0
+  },
+  {
+   "moves": 2000,
+   "ms": 774.1
+  }
+ ],
+ "scale": [
+  {
+   "code": "load_s01",
+   "documents": 1002,
+   "generate_s": 14,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s02",
+   "documents": 1002,
+   "generate_s": 15,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s03",
+   "documents": 1002,
+   "generate_s": 17,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s04",
+   "documents": 1002,
+   "generate_s": 15,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s05",
+   "documents": 1002,
+   "generate_s": 14,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s06",
+   "documents": 1002,
+   "generate_s": 13,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s07",
+   "documents": 1002,
+   "generate_s": 14,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s08",
+   "documents": 1002,
+   "generate_s": 13,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s09",
+   "documents": 1002,
+   "generate_s": 13,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s10",
+   "documents": 1002,
+   "generate_s": 14,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s11",
+   "documents": 1002,
+   "generate_s": 13,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s12",
+   "documents": 1002,
+   "generate_s": 13,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s13",
+   "documents": 1002,
+   "generate_s": 13,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s14",
+   "documents": 1002,
+   "generate_s": 13,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s15",
+   "documents": 1002,
+   "generate_s": 14,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s16",
+   "documents": 1002,
+   "generate_s": 14,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s17",
+   "documents": 1002,
+   "generate_s": 14,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_s18",
+   "documents": 1002,
+   "generate_s": 13,
+   "items": 500,
+   "lines": 5080,
+   "moves": 5392,
+   "warehouses": 2
+  },
+  {
+   "code": "load_std",
+   "documents": 32831,
+   "generate_s": 1424,
+   "items": 5000,
+   "lines": 136561,
+   "moves": 141599,
+   "warehouses": 10
+  }
+ ],
+ "server": "16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+ "totals": {
+  "db_size": "595 MB",
+  "documents": 50867,
+  "moves": 238655,
+  "tenants": 20
+ },
+ "when": "2026-11-19 10:02"
+}

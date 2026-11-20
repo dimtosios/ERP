@@ -1,0 +1,6 @@
+step,op,day,qty,unit_cost,src_step,exp_move_avg,exp_move_fifo,exp_corr_avg,exp_corr_fifo,exp_qty,exp_value_avg,exp_value_fifo,exp_layers
+1,in,0,2,3.00,,6.00,6.00,,,,,,
+2,out,0,7,,,-21.00,-21.00,,,,,,
+3,in,0,3,4.10,,12.30,12.30,-3.30,-3.30,,,,
+4,in,0,4,5.00,,20.00,20.00,-4.00,-4.00,,,,
+5,out,0,1,,,-5.00,-5.00,,,1,5.00,5.00,1@5

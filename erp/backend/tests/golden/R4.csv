@@ -1,0 +1,6 @@
+step,op,day,qty,unit_cost,src_step,exp_move_avg,exp_move_fifo,exp_corr_avg,exp_corr_fifo,exp_qty,exp_value_avg,exp_value_fifo,exp_layers
+1,pin,-1,10,5.00,,50.00,50.00,6.00,6.00,,,,
+2,out,-4,3,,,-15.00,-15.00,,,,,,
+3,pin,0,10,8.00,,80.00,80.00,,,,,,
+4,out,-6,2,,,-16.00,-16.00,,,,,,
+5,ret_out,0,2,,3,-16.00,-16.00,,,13,89.00,89.00,5@5;8@8
