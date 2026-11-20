@@ -109,6 +109,12 @@ do $do$ begin
       jsonb_build_object('lines', jsonb_build_array(jsonb_build_object('line_id', (select line_id from erp.document_lines l join erp.documents d using (tenant_id, document_id) where d.notes = 'B transfer'),
                                                                      'received_qty', 1, 'reason', 'short'))), gen_random_uuid());
   end if;
+  if to_regprocedure('erp_api.attachment_add(jsonb,uuid)') is not null then   -- E190 (Draft 1): a file of B1, then a GRN draft from it (attachments)
+    perform erp_api.grn_draft_from_extraction('{"extractor": "iso", "lines": [{"description": "B item", "qty": 1, "unit_price": 1, "confidence": 1}]}',
+      (erp_api.attachment_add(jsonb_build_object('branch_id', (select branch_id from erp.branches where code = 'B1'), 'filename', 'b note.pdf',
+         'content_base64', encode('\x255044462d312e340a78787878'::bytea, 'base64')), gen_random_uuid()) ->> 'attachment_id')::uuid,
+      (select warehouse_id from erp.warehouses where code = 'BW1'), 'iso:b:dn:0001');
+  end if;
 end $do$;
 reset role;
 
@@ -136,6 +142,13 @@ do $do$ begin
       'warehouse_id', (select warehouse_id from erp.warehouses where code = 'AW1'), 'dest_warehouse_id', (select warehouse_id from erp.warehouses where code = 'AW2'),
       'lines', jsonb_build_array(jsonb_build_object('item_id', (select item_id from erp.items where code = 'AITEM'), 'qty', 1))), gen_random_uuid());
   end if;
+  if to_regprocedure('erp_api.attachment_add(jsonb,uuid)') is not null then   -- E190: a GRN draft of A1 with a file ('A note'), one file not linked ('A spare')
+    perform erp_api.attachment_add(jsonb_build_object('document_id', (erp_api.doc_save_draft('GRN', jsonb_build_object('branch_id', (select branch_id from erp.branches where code = 'A1'),
+      'warehouse_id', (select warehouse_id from erp.warehouses where code = 'AW1'), 'notes', 'A grn'), gen_random_uuid())) ->> 'document_id', 'filename', 'A note.pdf',
+      'content_base64', encode('\x255044462d312e340a79797979'::bytea, 'base64')), gen_random_uuid());
+    perform erp_api.attachment_add(jsonb_build_object('branch_id', (select branch_id from erp.branches where code = 'A1'), 'filename', 'A spare.pdf',
+      'content_base64', encode('\x255044462d312e340a7a7a7a7a'::bytea, 'base64')), gen_random_uuid());
+  end if;
 end $do$;
 reset role;
 -- every id of tenant B, to look for in RPC replies
@@ -156,6 +169,9 @@ do $do$ begin   -- ids of later files' rows of tenant B
   end if;
   if to_regclass('erp.expense_categories') is not null then   -- E180 (T19): the default categories of B (tenant trigger)
     insert into t.bids select category_id::text from erp.expense_categories where tenant_id = t.b();
+  end if;
+  if to_regclass('erp.attachments') is not null then   -- E190 (Draft 1)
+    insert into t.bids select attachment_id::text from erp.attachments where tenant_id = t.b();
   end if;
 end $do$;
 create function t.bid(p_sql text) returns uuid language plpgsql security definer as $$ declare v uuid; begin execute p_sql into v; return v; end $$;
@@ -361,6 +377,25 @@ do $do$ begin   -- E150 rows (T11 / T12)
       ('erp_api.expense_category_save(jsonb,uuid)', 'expense.category.write', $$select erp_api.expense_category_save('{"code": "RX", "name": "Role test"}', gen_random_uuid())$$,
          $$select erp_api.expense_category_save(jsonb_build_object('code', 'RY', 'name', 'x', 'parent_id', t.bid('select category_id from erp.expense_categories where tenant_id = t.b() limit 1')), gen_random_uuid())$$),
       ('erp_api.report_expenses(jsonb)', 'doc.exp.read', $$select erp_api.report_expenses()$$, $$select erp_api.report_expenses(jsonb_build_object('branch_id', t.bb()))$$);
+  end if;
+  if to_regprocedure('erp_api.attachment_add(jsonb,uuid)') is not null then   -- E190 Draft 1
+    insert into t.rpc (fn, cap, call, cross_call) values
+      ('erp_api.attachment_add(jsonb,uuid)', 'doc.grn.create',
+         $$select erp_api.attachment_add(jsonb_build_object('branch_id', (select branch_id from erp.branches where code = 'A1'), 'filename', 'r.pdf',
+             'content_base64', encode('\x255044462d312e340a'::bytea, 'base64')), gen_random_uuid())$$,
+         $$select erp_api.attachment_add(jsonb_build_object('document_id', t.bid('select document_id from erp.documents where tenant_id = t.b() and doc_type = ''GRN'' limit 1'),
+             'filename', 'r.pdf', 'content_base64', encode('\x255044462d312e340a'::bytea, 'base64')), gen_random_uuid())$$),
+      ('erp_api.attachment_list(uuid,boolean)', 'doc.grn.read', $$select erp_api.attachment_list(t.bid('select document_id from erp.documents where notes = ''A grn'''), true)$$,
+         $$select erp_api.attachment_list(t.bid('select document_id from erp.documents where tenant_id = t.b() and doc_type = ''GRN'' limit 1'))$$),
+      ('erp_api.attachment_get(uuid)', 'doc.grn.read', $$select erp_api.attachment_get(t.bid('select attachment_id from erp.attachments where filename = ''A note.pdf'''))$$,
+         $$select erp_api.attachment_get(t.bid('select attachment_id from erp.attachments where tenant_id = t.b() limit 1'))$$),
+      ('erp_api.attachment_delete(uuid,uuid)', 'doc.grn.create', $$select erp_api.attachment_delete(t.bid('select attachment_id from erp.attachments where filename = ''A note.pdf'''), gen_random_uuid())$$,
+         $$select erp_api.attachment_delete(t.bid('select attachment_id from erp.attachments where tenant_id = t.b() limit 1'), gen_random_uuid())$$),
+      ('erp_api.grn_draft_from_extraction(jsonb,uuid,uuid,text)', 'doc.grn.create',
+         $$select erp_api.grn_draft_from_extraction('{"lines": [{"description": "x", "qty": 1}]}', t.bid('select attachment_id from erp.attachments where filename = ''A spare.pdf'''),
+             t.bid('select warehouse_id from erp.warehouses where code = ''AW1'''), 'iso:a:dn:0001')$$,
+         $$select erp_api.grn_draft_from_extraction('{"lines": [{"description": "x", "qty": 1}]}', t.bid('select attachment_id from erp.attachments where filename = ''A spare.pdf'''),
+             t.bid('select warehouse_id from erp.warehouses where code = ''BW1'''), 'iso:a:dn:0002')$$);
   end if;
   if to_regprocedure('erp_api.recost_status()') is not null then   -- E140 T13
     insert into t.rpc (fn, cap, call, cross_call) values

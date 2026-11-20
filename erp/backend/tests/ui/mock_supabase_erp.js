@@ -162,6 +162,11 @@
       ? (d.lines || []).filter(function (l) { return !l.expense_category_id || !l.vat_class_id; }).map(function (l) { return {code: 'required', field: l.expense_category_id ? 'vat_class_id' : 'expense_category_id', line_no: l.line_no,
           message: l.expense_category_id ? 'Choose the VAT class.' : 'Choose the expense category.'}; })
       : (d.lines || []).filter(function (l) { return !l.item_id; }).map(function (l) { return {code: 'required', field: 'item_id', line_no: l.line_no, message: 'Item is required.'}; });
+    if (d.state === 'draft' && d.doc_type === 'GRN') (d.lines || []).forEach(function (l) {   // Draft 1 (E190 grn_dn_validate)
+      var x = (l.extra || {}).dn; if (!x) return;
+      if (x.status === 'unmatched' && !l.item_id) o.problems.push({code: 'not_matched', field: 'item_id', line_no: l.line_no, message: 'Item not matched: "' + (x.description || x.supplier_code || x.barcode || '?') + '". Choose the item.'});
+      else if (x.status === 'low_confidence' && !x.checked) o.problems.push({code: 'check_line', field: 'extra.dn', line_no: l.line_no, message: 'Read from the delivery note with low confidence: check item, quantity and price, then mark it checked.'});
+    });
     if (!can('cost.read')) { delete o.total_cost; (o.lines || []).forEach(function (l) { delete l.cost_value; }); }
     return o;
   }
@@ -189,6 +194,11 @@
   var SET = {time_zone: 'Europe/Athens', negative_stock: 'warn', valuation_method: 'average', lock_date: null, hide_money: false, logo_url: null, version: 1,
              thresholds: ls('mock_exp_limit') ? {exp_value: Number(ls('mock_exp_limit'))} : {}};   // mock_exp_limit: thresholds.exp_value at load
   var IDEM = {};
+  var ATT = [];   // Draft 1 (E190) attachments, with their base64 content
+  function dnSum(d) {
+    var ls = d.lines || [], f = function (st) { return ls.filter(function (l) { var x = (l.extra || {}).dn; return x && x.status === st && (st !== 'unmatched' || !l.item_id) && (st !== 'low_confidence' || !x.checked); }).length; };
+    return {lines: ls.length, matched: f('matched'), unmatched: f('unmatched'), low_confidence: f('low_confidence'), supplier_matched: !!d.counterparty_id, problems: docOut(d).problems.length};
+  }
   function err(code, msg, detail) { return {data: null, error: {message: code + ': ' + msg, details: detail ? JSON.stringify(detail) : null, code: 'P0001'}}; }
   function can(c) { return (CAPS[ROLE] || []).indexOf(c) >= 0; }
   function page(rows, a, keyf) {
@@ -374,6 +384,7 @@
         return {data: {posted: false, warnings: [], receipt: {receipt_date: x.receipt.receipt_date, adjustments: x.adj}, document: docOut(d)}, error: null};
       }
       if (a.p_to_state === 'cancelled' && !o.reason) return err('ERP_VALIDATION', '1 problem', [{code: 'required', field: 'reason', message: 'A reason is required.'}]);
+      if (a.p_to_state === 'posted' && d.doc_type === 'GRN' && docOut(d).problems.length) return err('ERP_VALIDATION', docOut(d).problems.length + ' problem(s)', docOut(d).problems);
       if (a.p_to_state === 'posted') {
         var sign = d.doc_type === 'CONS' || d.doc_type === 'ADJ_OUT' ? -1 : 1;
         var warn = (d.lines || []).filter(function (l) { return sign < 0 && d.warehouse_id !== 'wt' && (STOCKQ[l.item_id] || 0) - Number(l.qty) < 0; })
@@ -389,6 +400,72 @@
       }
       d.state = a.p_to_state; if (o.reason) d.cancel_reason = o.reason; d.version++;
       return {data: {posted: false, warnings: [], document: docOut(d)}, error: null};
+    },
+    // Draft 1 (E190): attachments + DRAFT GRN from a delivery-note extraction (no extractor here: the page sends the extraction)
+    attachment_add: function (a) {
+      var p = a.p_attachment || {}, d = p.document_id ? DOCS.find(function (x) { return x.document_id === p.document_id; }) : null;
+      var br = d ? d.branch_id : p.branch_id;
+      if (p.document_id && !d) return err('ERP_TENANT', 'not yours');
+      if (!br) return err('ERP_VALIDATION', '1 problem', [{code: 'required', field: 'branch_id', message: 'Choose the branch (warehouse) first.'}]);
+      if (!can('doc.grn.create') || !mine(br)) return err('ERP_FORBIDDEN', 'no');
+      var bin = ''; try { bin = atob(p.content_base64 || ''); } catch (e) { return err('ERP_VALIDATION', '1 problem', [{code: 'invalid', field: 'content_base64', message: 'The content is not valid base64.'}]); }
+      var mime = bin.slice(0, 5) === '%PDF-' ? 'application/pdf' : bin.slice(0, 3) === '\xff\xd8\xff' ? 'image/jpeg' : bin.slice(0, 8) === '\x89PNG\r\n\x1a\n' ? 'image/png' : null;
+      if (!bin.length) return err('ERP_VALIDATION', '1 problem', [{code: 'required', field: 'content_base64', message: 'The file is empty.'}]);
+      if (bin.length > 5242880) return err('ERP_VALIDATION', '1 problem', [{code: 'too_large', field: 'content_base64', message: 'The file is larger than 5 MB.'}]);
+      if (!mime) return err('ERP_VALIDATION', '1 problem', [{code: 'type', field: 'content_base64', message: 'Only PDF, JPEG or PNG files (checked by their content).'}]);
+      var row = {attachment_id: 'at' + (NEXTID++), branch_id: br, document_id: d ? d.document_id : null, kind: 'delivery_note', filename: p.filename, mime: mime, size_bytes: bin.length,
+                 sha256: 'mock', uploaded_by_email: 'me@clinic.test', uploaded_at: '2026-11-18T09:00:00Z', deleted_at: null, content_base64: p.content_base64};
+      ATT.push(row); var o = Object.assign({}, row); delete o.content_base64; return {data: o, error: null};
+    },
+    attachment_list: function (a) {
+      var d = DOCS.find(function (x) { return x.document_id === a.p_document_id; });
+      if (!d) return err('ERP_TENANT', 'not yours');
+      if (!can('doc.grn.read') || !mine(d.branch_id)) return err('ERP_FORBIDDEN', 'no');
+      return {data: {rows: ATT.filter(function (x) { return x.document_id === d.document_id && (a.p_include_deleted || !x.deleted_at); })
+        .map(function (x) { var o = Object.assign({}, x); delete o.content_base64; return o; })}, error: null};
+    },
+    attachment_get: function (a) {
+      var x = ATT.find(function (z) { return z.attachment_id === a.p_attachment_id; });
+      if (!x) return err('ERP_TENANT', 'not yours');
+      if (!can('doc.grn.read') || !mine(x.branch_id)) return err('ERP_FORBIDDEN', 'no');
+      if (x.deleted_at) return err('ERP_VALIDATION', '1 problem', [{code: 'deleted', field: 'attachment_id', message: 'The file was deleted.'}]);
+      return {data: Object.assign({}, x), error: null};
+    },
+    attachment_delete: function (a) {
+      var x = ATT.find(function (z) { return z.attachment_id === a.p_attachment_id; });
+      if (!x) return err('ERP_TENANT', 'not yours');
+      var d = x.document_id ? DOCS.find(function (z) { return z.document_id === x.document_id; }) : null;
+      if (!can(d && d.state !== 'draft' ? 'doc.grn.approve' : 'doc.grn.create') || !mine(x.branch_id)) return err('ERP_FORBIDDEN', 'no');
+      x.deleted_at = '2026-11-18T09:30:00Z'; var o = Object.assign({}, x); delete o.content_base64; return {data: o, error: null};
+    },
+    grn_draft_from_extraction: function (a) {
+      var w = ALLWHS.find(function (z) { return z.warehouse_id === a.p_warehouse_id; });
+      if (!w) return err('ERP_TENANT', 'not yours');
+      if (!can('doc.grn.create') || !mine(w.branch_id)) return err('ERP_FORBIDDEN', 'no');
+      var ex = DOCS.find(function (z) { return z.client_key === a.p_client_key; });
+      if (ex) return {data: {created: false, document: docOut(ex), summary: dnSum(ex)}, error: null};
+      var att = ATT.find(function (z) { return z.attachment_id === a.p_attachment_id; });
+      if (!att) return err('ERP_TENANT', 'not yours');
+      if (att.document_id) return err('ERP_VALIDATION', '1 problem', [{code: 'linked', field: 'p_attachment_id', message: 'The file already belongs to another document.'}]);
+      var e = a.p_extraction || {}, sup = e.supplier || {}, cp = CPS.find(function (c) { return sup.tax_id && c.tax_id === sup.tax_id && c.kind !== 'customer'; });
+      if (!(e.lines || []).length) return err('ERP_VALIDATION', '1 problem', [{code: 'required', field: 'lines', message: 'The extraction has no lines.'}]);
+      var d = {document_id: 'n' + (NEXTID++), doc_type: 'GRN', state: 'draft', version: 1, doc_no: null, branch_id: w.branch_id, warehouse_id: w.warehouse_id, warehouse_code: w.code,
+               counterparty_id: cp ? cp.counterparty_id : null, counterparty_name: cp ? cp.name : null, ext_number: e.dn_number || null, ext_date: e.dn_date || null, doc_date: '2026-11-18',
+               client_key: a.p_client_key, source: 'external', notes: 'From delivery note ' + att.filename,
+               extra: {dn: {attachment_id: att.attachment_id, extractor: e.extractor || 'unknown', warnings: e.warnings || [], supplier: {tax_id: sup.tax_id || null, name: sup.name || null, matched: !!cp}}}};
+      d.lines = e.lines.map(function (l, i) {
+        var hit = (l.barcode && ITEMBY[l.barcode]) ? [ITEMBY[l.barcode], 'barcode', ITEMBY[l.barcode].code] : null;
+        if (!hit && l.supplier_code && ITEMBY[String(l.supplier_code).toUpperCase()] && !ITEMBY[String(l.supplier_code).toUpperCase()].code) hit = [ITEMBY[String(l.supplier_code).toUpperCase()], 'code', String(l.supplier_code).toUpperCase()];
+        if (!hit && l.description) { var k = Object.keys(ITEMBY).find(function (c) { return !ITEMBY[c].code && ITEMBY[c].name.toLowerCase() === String(l.description).toLowerCase(); }); if (k) hit = [ITEMBY[k], 'name', k]; }
+        var st = !hit ? 'unmatched' : (l.confidence == null || l.confidence < 0.8 ? 'low_confidence' : 'matched'), q = Number(l.qty) > 0 ? Number(l.qty) : 0, pr = l.unit_price != null ? Number(l.unit_price) : null;
+        return {line_id: d.document_id + '-' + i, line_no: i + 1, item_id: hit ? hit[0].item_id : null, item_code: hit ? hit[2] : '', item_name: hit ? hit[0].name : '', description: l.description,
+                qty: String(q), qty_base: String(q), unit_price: pr != null ? String(pr) : null, net: pr != null ? (Math.round(q * pr * 100) / 100).toFixed(2) : '0.00',
+                extra: {dn: {status: st, match: hit ? hit[1] : null, description: l.description || null, supplier_code: l.supplier_code || null, barcode: l.barcode || null, unit: l.unit || null,
+                             confidence: l.confidence == null ? null : l.confidence, checked: false}}};
+      });
+      d.total_net = d.lines.reduce(function (s2, l) { return s2 + Number(l.net); }, 0).toFixed(2);
+      DOCS.unshift(d); att.document_id = d.document_id;
+      return {data: {created: true, document: docOut(d), summary: dnSum(d)}, error: null};
     },
     expense_category_list: function (a) {
       if (!can('doc.exp.read')) return err('ERP_FORBIDDEN', 'no');

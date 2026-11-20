@@ -393,6 +393,47 @@ Cap `doc.exp.read`; posted EXP of the caller's branches. Filter `group_by` (`cat
 `totals {docs, lines, net, vat, gross, paid_gross}`. View `erp.rpt_erp_expenses` (one row per posted EXP line,
 caller's RLS).
 
+## E190 attachments + delivery note -> DRAFT GRN (Draft 1)
+Files are stored IN the database (`erp.attachments.content` bytea, storage external): at most 5 MB (5 242 880 bytes),
+PDF / JPEG / PNG only, decided by the first bytes (`%PDF-`, `FF D8 FF`, PNG signature; a declared `mime` must agree),
+`sha256` (hex) kept. Only GRN documents take files in this build. Append-only: only the link (`document_id`, set by the
+draft RPC or cleared when a draft is deleted) and a one-time soft delete change; the bytes stay. Audit
+`attachment.add` / `attachment.delete` / `grn.draft_from_extraction`; usage counter `attachments` (`check_limit`).
+
+### `attachment_add(p_attachment jsonb, p_idempotency_key) -> attachment`
+Cap `doc.grn.create` on the file's branch. Keys `document_id` (a GRN: linked, its branch) or `branch_id` (not linked
+yet), `filename` (200, no `/` `\`), `mime` (optional), `content_base64`. Problems: `required`, `too_large`, `type`,
+`invalid`. Reply (never the bytes) `{attachment_id, branch_id, document_id, kind, filename, mime, size_bytes, sha256,
+uploaded_by, uploaded_by_email, uploaded_at, deleted_at}`. The idempotency hash uses an md5 of the content.
+
+### `attachment_list(p_document_id, p_include_deleted = false) -> {rows}`
+Cap `doc.grn.read` on the document's branch + the document readable. Rows as above, oldest first.
+
+### `attachment_get(p_attachment_id) -> attachment + content_base64`
+Cap `doc.grn.read` on the file's branch (+ its GRN readable). A deleted file: problem `deleted`.
+
+### `attachment_delete(p_attachment_id, p_idempotency_key) -> attachment`
+Soft delete. Cap `doc.grn.create`; a file of a posted / cancelled GRN needs `doc.grn.approve`.
+
+### Extraction contract `delivery_note_extraction` (version 1)
+`{schema: "delivery_note_extraction/1" (optional), extractor (60), supplier: {tax_id, name}, dn_number (60), dn_date
+(yyyy-mm-dd), lines: [{description, supplier_code, barcode, qty, unit, unit_price, confidence 0..1}] (1-500),
+warnings: [text]}`. Unknown keys are ignored. Produced by the extractor (future Edge Function; in this build the page's
+`window.ERP_EXTRACTOR`, default a MOCK). Full text: E190 section 4.
+
+### `grn_draft_from_extraction(p_extraction, p_attachment_id, p_warehouse_id, p_client_key) -> {created, document, summary}`
+Cap `doc.grn.create` on the warehouse's branch. Creates a DRAFT GRN through `doc_save_draft` (never posts): supplier =
+the one active supplier / both whose normalised tax ID equals `supplier.tax_id`; each line -> an ACTIVE non-service
+item by barcode, then item code = `supplier_code`, then exact name = `description` (one item only); line `extra.dn =
+{status matched | unmatched | low_confidence (confidence < 0.80 or missing), match, description, supplier_code, barcode,
+unit, confidence, checked}`; header `extra.dn = {attachment_id, extractor, warnings, supplier {tax_id, name, matched}}`;
+`ext_number` / `ext_date` from the note (a bad date -> a warning); bad qty -> 0, bad price -> empty (core problems).
+Problems that block posting (`erp.grn_dn_validate` via E150): `not_matched` (line without item; supplier not found),
+`check_line` (low confidence until the user sets `extra.dn.checked = true` with `doc_save_draft`). The file must be of
+the same branch, not deleted, not linked; it is linked to the draft. Idempotent by `p_client_key` (8-120 of
+`A-Z a-z 0-9 : _ . -`; the page uses `dn:<attachment_id>`): a repeat returns `created: false` and the draft as it is
+now. `summary = {lines, matched, unmatched, low_confidence, supplier_matched, problems}`.
+
 ## Front-end (T04): which screen calls what
 | Screen | Calls | Capability shown / used |
 |---|---|---|
@@ -404,6 +445,7 @@ caller's RLS).
 | Master data (T07) > Items, Categories, Units, VAT classes, Warehouses, Customers & suppliers, Series | `*_list` (keyset "Load more", search `q` on items / counterparties), `*_save` (changed keys + id, `version` for items / counterparties), `doc_type_list`, `series_create_defaults` | tab: the list's read capability; New / Save: the write capability; deactivate checkbox: `master.archive` / `counterparty.archive` |
 | Stock (T14) > On hand | `warehouse_list`, `stock_on_hand` (filters, keyset), row -> `stock_card` drawer | `stock.read`; values with `cost.read` |
 | Stock > Documents | `doc_list` (types OPN / GRN / ADJ_IN / ADJ_OUT / CONS the caller reads), New: `doc_save_draft` (lines: `item_lookup` by code / barcode), `doc_get`, buttons from the document's `actions` -> `doc_set_state` (post; warnings dialog -> again with `ack_warnings`; cancel / reject with a reason), `doc_delete_draft`, `doc_copy`; "Import opening stock": `opening_import` (check, then the OPN draft) | the type's `.read` / `.create`; import: `doc.opn.create` |
+| Stock > Documents > GRN drawer, Delivery note box (Draft 1) | `attachment_list` (files of the receipt), file picker -> `attachment_add` (base64; branch of the chosen warehouse, or the receipt), Open -> `attachment_get` (link + photo preview), Delete -> `attachment_delete`; new receipt: "Create draft from note" -> `window.ERP_EXTRACTOR` (default MOCK) -> `grn_draft_from_extraction` (client_key `dn:<file id>`) -> the draft opens, flagged lines, "Mark checked" -> `doc_save_draft` keeps line `extra.dn` | upload / create: `doc.grn.create`; files: `doc.grn.read`; delete on a posted GRN: `doc.grn.approve` |
 | Stock > Negative stock | `report_negative_stock` | `stock.read` |
 | Stock > Alerts | `alert_list`, `alert_resolve` | `alert.read` / `alert.resolve` |
 | Transfers (T18) | `doc_list` (`doc_type: TRF`, filters `state`, `branch_id`; keyset), `trf_warehouses`, `warehouse_list` (source), row -> `trf_get` drawer (the stock document drawer: source / destination / delivery, lines by `item_lookup`; buttons from `actions`: Dispatch -> `doc_set_state('dispatched')` with the warnings dialog -> `ack_warnings`, Cancel with a reason); "Confirm receipt" (one button for the two receive actions) -> receipt form by line -> `doc_set_state('received' \| 'received_with_difference', {receipt_date, lines})`; generated adjustments open in the stock drawer (`doc_get`; TRANSIT warehouse and lines read-only) | menu `doc.trf.read`; New: `doc.trf.create`; buttons from `actions` |

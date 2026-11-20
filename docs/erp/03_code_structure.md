@@ -13,6 +13,7 @@ erp/backend/E140_stock_engine.sql       moves, balances, layers, item_costs, pos
 erp/backend/E150_stock_docs.sql         OPN, GRN, ADJ, CONS
 erp/backend/E160_transfer.sql           TRF + transit            E170_stocktake.sql   STK
 erp/backend/E180_expenses.sql           expense categories, EXP document, recurring templates
+erp/backend/E190_attachments.sql        attachments (files in the DB), delivery note -> DRAFT GRN (Draft 1)
 erp/backend/E200_purchasing.sql         PO, PINV, PCRN, PRET     E210_sales.sql       SQ, SO, DN, SINV, SVC, CRN, RR, RS, RCR
 erp/backend/E220_reservations.sql
 erp/backend/E300_money.sql              accounts, RCPT, PAY, MTR, CBAL, allocations

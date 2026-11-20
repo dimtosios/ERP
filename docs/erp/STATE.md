@@ -156,6 +156,23 @@ Short implementation log for Fable. The CRM's `ARCHITECT_STATE.md` is not touche
   demo.html is stale). App fix found by the demo: per-login caches (warehouses, suppliers, categories, branches) were
   kept across sign-out / sign-in in one tab; now dropped at every sign-in (`onLogin` in 00_core.js).
 
+- Draft 1, supplier delivery note -> DRAFT goods receipt (`E190_attachments.sql`, `erp/app/37_delivery_note.js`): platform
+  table `attachments` (STATE 13 closed: bytes in the row, 5 MB, PDF / JPEG / PNG by magic bytes, sha256, append-only +
+  one soft delete, RLS by branch + `doc.grn.read`), RPCs `attachment_add` / `_list` / `_get` / `_delete`; documented
+  extraction contract `delivery_note_extraction/1`; `grn_draft_from_extraction` (supplier by normalised tax ID, line ->
+  item by barcode, then item code, then exact name; unmatched / low-confidence lines kept and flagged in line
+  `extra.dn`, blocking the post through `erp.grn_dn_validate` (hook in E150 `doc_stock_validate`); idempotent by
+  client_key; file linked; NEVER posts). GRN catalogue row: `header_extra {mark,dn}`, `line_extra {dn}` (seed 3).
+  Screen: Stock > Documents > GRN drawer "Delivery note" box (file picker, name / size, Upload, Create draft from note
+  via the pluggable `window.ERP_EXTRACTOR`, default deterministic MOCK labelled "MOCK extractor - sample data"; files
+  list with Open (link + photo preview) / Delete; flagged lines highlighted with the note's text, "Mark checked").
+  App fixes: the drawer keeps header / line `extra.dn` on save; the document's own supplier is always an option of the
+  supplier list (a cached list older than the document cleared it on save, found by the real-DB smoke). Suite E190
+  (89 checks), E990 registry (+5 RPCs, A / B attachment fixtures), stub smoke `smoke_erp_delivery_note.py` (28),
+  real-DB `smoke_erp_db.py` +6 (34: file bytes / sha256 in the DB, draft by tax ID / barcode, post refused, fixed,
+  posted GRN-SER/000002, file served back). `demo.html` rebuilt by `build_demo.py` only (demo sources unchanged; the
+  demo update is a later task). Not live.
+
 ## Next
 - Expenses lite done on `main` (not live; clinics try it on a scratch / test project; accountant answers 92-93 before
   real use). Live note: existing branches need Master data > Series "Create missing" once for `EXP-<branch>`.
@@ -237,7 +254,7 @@ Short implementation log for Fable. The CRM's `ARCHITECT_STATE.md` is not touche
 12. Plan hook signature is `erp.check_limit(tenant, kind)` (02 wrote `check_limit(kind)`); `users` / `branches`
     count live rows, other kinds read `tenant_usage` of the current month. Unlimited unless `tenants.limits` sets it.
 13. `attachments` (02 platform list) is not created yet: no E0 task uses it; it comes with the first task that
-    stores a file (T19 expense attachment).
+    stores a file (T19 expense attachment). [CLOSED Draft 1: created by E190 for GRN delivery notes, see 101-110]
 14. Invitation email: the ERP stores the invitation; the Supabase login is created by the owner in the Supabase
     dashboard (Invite user), as for the CRM today, or by "Forgot password" for an email that already has a login.
     No Edge Function / service key in E0. Requires "Allow new users to sign up" OFF (CRM setup step 2), otherwise
@@ -525,3 +542,46 @@ attacked at F1 (E991) and hold.
     "server problems" step sets `mock_fail` through an init script: a localStorage write made right before a file://
     reload was lost in 2 of 5 runs, the likely cause of the unexplained T18 flake (STATE 90); `smoke_erp_transfers.py`
     still uses the old pattern (not changed here). [RISK: watch it.]
+101. [NEW Draft 1] Storage: the file bytes live in `erp.attachments.content` (bytea, storage external), hard limit 5 MB
+    per file (checked on the decoded bytes and, before decoding, on the base64 length), PDF / JPEG / PNG by magic bytes
+    only (the file name / declared type never decide). A storage bucket is a LIVE decision (open item L-D1).
+102. [NEW Draft 1] Attachments attach to GRN documents only in this build (one capability family: `doc.grn.create`
+    adds / deletes, `doc.grn.read` reads, deleting the file of a posted / cancelled GRN needs `doc.grn.approve`).
+    A file may exist unlinked (uploaded before "Create draft from note"); it carries the branch of the chosen warehouse
+    and is visible only to that branch. Other document types (EXP receipts) are a later task.
+103. [NEW Draft 1] Append-only except the link and one soft delete; the bytes of a deleted file stay (no purge). A
+    deleted draft leaves its files unlinked (FK `on delete set null (document_id)`, PostgreSQL 15+). Purge / retention
+    is a LIVE decision (L-D3).
+104. [NEW Draft 1] Extraction contract `delivery_note_extraction/1` (E190 section 4, API.md). Unknown keys are ignored
+    (the extractor may add fields); a wrong `schema` value, no lines, more than 500 lines are refused.
+105. [NEW Draft 1] Matching: supplier = the ONE active supplier / both whose tax ID equals the normalised extracted
+    tax ID (E120 `tax_id_norm`, by the counterparty's country); none or several -> no supplier (problem). Line -> ACTIVE
+    non-service item by barcode, then our item code = supplier_code (case-insensitive), then exact name = description
+    (case-insensitive, trimmed, only when exactly one item has it). No supplier-code table (supplier item codes) yet:
+    when a supplier's codes differ from ours, lines fall to name / unmatched until such a table exists (later task).
+106. [NEW Draft 1] Confidence threshold 0.80: below it, or missing, a matched line is `low_confidence` and blocks the
+    post until the user marks it checked (`extra.dn.checked = true`). An unmatched line blocks until an item is chosen
+    (no "checked" needed). Quantity not a number > 0 -> 0, price not a number >= 0 -> empty: the core validation then
+    blocks; unit text is kept for the user only (base unit; alternative units T38).
+107. [NEW Draft 1] Never posted automatically: `grn_draft_from_extraction` only calls `doc_save_draft`; a draft with
+    every line matched and confident still waits for the user's Post. Source of the draft = `external` (client_key set),
+    notes "From delivery note <file name>".
+108. [NEW Draft 1] Idempotency of the draft RPC is by `p_client_key` (no idempotency-key argument, as the task's
+    signature); the page uses `dn:<attachment_id>`, so a retry or a double tap returns the same draft unchanged (the
+    user's fixes are kept). A per-key advisory lock serialises two calls.
+109. [NEW Draft 1] The extractor runs in the page (`window.ERP_EXTRACTOR({file, attachment, warehouse})`); default =
+    deterministic MOCK (same 3 sample lines for any file, extractor "mock", shown as "MOCK extractor - sample data").
+    The real extractor service is a LIVE decision (L-D2); nothing in this build calls an external service.
+110. [NEW Draft 1] Open / preview: `attachment_get` returns base64; the page makes a blob link the person taps (a
+    pop-up opened after a server call is blocked on phones) and shows photos inline. `attachment_list` / `_get` never
+    return a deleted file's bytes; the audit keeps filename / size / sha256.
+
+## Open LIVE items for the owner (Draft 1; not decided here)
+- L-D1 Storage: keep files in the database (as built; 5 MB each, counts against the database size of the Supabase
+  plan) or move them to a Supabase Storage bucket (private bucket, RLS on `storage.objects`, the table keeps metadata +
+  the object path). Decide before real use; a move is a later task.
+- L-D2 Extractor service: which OCR / AI service reads the delivery notes (data leaves the project: supplier prices,
+  no patient data expected), where it runs (Edge Function + secret key), cost per page, and Greek-language quality.
+  The contract `delivery_note_extraction/1` is what it must return.
+- L-D3 Retention / purge of deleted files and of files of cancelled receipts (accountant: how long supplier documents
+  are kept); size limit per tenant (`tenants.limits.attachments`, monthly count) if wanted.

@@ -189,7 +189,7 @@ ACT['stk-doc'] = async function (el) {
 };
 function docLineRow(l, i, form, ro) {
   if (form.expense) return expLineRow(l, i, ro);
-  return '<div class="dline" data-i="' + i + '">' +
+  return '<div class="dline' + (dnLineFlag(l) ? ' dl-flag' : '') + '" data-i="' + i + '">' +
     '<div class="dl-item"><input class="dl-code" placeholder="' + esc(t('doc.f.item')) + '" value="' + esc(l.item_code || '') + '"' + (ro ? ' disabled' : '') + '>' +
     '<span class="muted dl-name">' + esc(l.item_name || '') + (l.on_hand != null ? ' · ' + esc(t('doc.on_hand', {qty: qtyTxt(l.on_hand)})) : '') + '</span></div>' +
     '<input class="dl-qty" inputmode="decimal" placeholder="' + esc(t('doc.f.qty')) + '" value="' + esc(l.qty != null ? qtyTxt(l.qty).replace(/,/g, '') : '') + '"' + (ro ? ' disabled' : '') + '>' +
@@ -199,7 +199,8 @@ function docLineRow(l, i, form, ro) {
     (form.lineRef ? '<input class="dl-ref" placeholder="' + esc(t('doc.f.line_ref')) + '" value="' + esc(l.ext_line_ref || '') + '"' + (ro ? ' disabled' : '') + '>' : '') +
     '<span class="dl-amt">' + (l.net != null && form.price ? esc(eur(l.net)) : '') + (l.cost_value != null ? ' <span class="muted">' + esc(t('doc.cost', {v: eur(l.cost_value)})) + '</span>' : '') + '</span>' +
     (ro ? '' : '<button class="link dl-del" data-act="doc-line-del" data-i="' + i + '" title="' + esc(t('doc.remove_line')) + '">✕</button>') +
-    '<input type="hidden" class="dl-id" value="' + esc(l.item_id || '') + '"><input type="hidden" class="dl-src" value="' + esc(l.source_line_id || '') + '"></div>';
+    '<input type="hidden" class="dl-id" value="' + esc(l.item_id || '') + '"><input type="hidden" class="dl-src" value="' + esc(l.source_line_id || '') + '">' +
+    dnLineInfo(l, i, ro) + '</div>';   // Draft 1: what the delivery note said, flag (37_delivery_note.js)
 }
 function docHead(d, form, ro) {
   var whs = (STK.whs || []).map(function (w) { return [w.warehouse_id, w.code + ' · ' + w.name]; }), h = '';
@@ -213,7 +214,11 @@ function docHead(d, form, ro) {
     else if (f === 'paid') h += expPaidFields(d, ro);
     else if (f === 'delivery') h += trfDeliveryFields(d, ro);
     else if (f === 'date') h += field('d-date', 'doc.f.date', inp('d-date', fmtDate(d.doc_date), 'text', ro));
-    else if (f === 'supplier') h += field('d-cp', 'doc.f.supplier', sel('d-cp', [['', t('md.choose')]].concat((STK.sups || []).map(function (c) { return [c.counterparty_id, c.name]; })), d.counterparty_id || '', ro));
+    else if (f === 'supplier') {   // the document's own supplier is always an option (the cached list may be older than the document)
+      var sups = (STK.sups || []).map(function (c) { return [c.counterparty_id, c.name]; });
+      if (d.counterparty_id && !sups.some(function (o) { return o[0] === d.counterparty_id; })) sups.push([d.counterparty_id, d.counterparty_name || d.counterparty_id]);
+      h += field('d-cp', 'doc.f.supplier', sel('d-cp', [['', t('md.choose')]].concat(sups), d.counterparty_id || '', ro));
+    }
     else if (f === 'ext_number') h += field('d-extno', 'doc.f.ext_number', inp('d-extno', d.ext_number, 'text', ro));
     else if (f === 'ext_date') h += field('d-extdate', 'doc.f.ext_date', inp('d-extdate', fmtDate(d.ext_date), 'text', ro));
     else if (f === 'mark') h += field('d-mark', 'doc.f.mark', inp('d-mark', (d.extra || {}).mark, 'text', ro));
@@ -241,6 +246,7 @@ function docDrawer(d) {
         return '<li>' + esc((p.line_no ? t('doc.line_n', {n: p.line_no}) + ': ' : '') + p.message) + '</li>'; }).join('') + '</ul>' : '';
       return '<p>' + stateBadge(d.state || 'draft') + (d.cancel_reason ? ' <span class="muted">' + esc(d.cancel_reason) + '</span>' : '') + '</p>' +
         (sys && d.ref_document_id ? '<p class="msg" id="doc-sys-note">' + esc(t('doc.system_note')) + '</p>' : '') + docHead(d, form, ro) +
+        (d.doc_type === 'GRN' ? dnSection(d) : '') +
         '<h2 style="margin-top:14px">' + esc(t('doc.lines')) + '</h2><div id="doc-lines">' + DOCD.lines.map(function (l, i) { return docLineRow(l, i, form, lro); }).join('') + '</div>' +
         (lro ? '' : '<button class="link" data-act="doc-line-add" id="doc-line-add">' + esc(t('doc.add_line')) + '</button>') +
         (d.doc_type === 'TRF' ? trfSection(d) : '') +
@@ -248,6 +254,7 @@ function docDrawer(d) {
         (d.total_cost != null && d.state === 'posted' ? '<p class="muted">' + esc(t('doc.total_cost', {v: eur(d.total_cost)})) + '</p>' : '') +
         (probs ? '<div class="msg" id="doc-problem-box">' + esc(t('doc.problems')) + probs + '</div>' : '');
     },
+    mount: d.doc_type === 'GRN' ? function () { dnMount(d); } : null,
     save: ro ? null : function () { return api('doc_save_draft', {p_type: d.doc_type, p_doc: docPayload()}, {write: true, key: D.key}); },
     onSaved: function (doc) { if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else docDrawer(doc); stkLoad(true); }});
 }
@@ -283,6 +290,7 @@ function docPayload() {
   if ($('d-paid')) { extra.paid = $('d-paid').checked; if (extra.paid && val('d-pm')) extra.payment_method = val('d-pm'); }
   if ($('d-extref')) p.ext_ref = val('d-extref').trim();
   if ($('d-notes')) p.notes = val('d-notes').trim();
+  if ((d.extra || {}).dn) extra.dn = d.extra.dn;   // Draft 1: the delivery-note data of a GRN stays with the draft
   if (form.head.some(function (f) { return f === 'mark' || f === 'reason' || f === 'cost_centre' || f === 'paid'; })) p.extra = extra;
   if (form.head.indexOf('delivery') >= 0) { if (Object.keys(extra.delivery || {}).length) p.extra = {delivery: extra.delivery}; else p.extra = {}; }
   if (form.expense) { p.lines = expPayloadLines(docReadLines()); return p; }
@@ -293,6 +301,7 @@ function docPayload() {
     if (l.ext_line_ref) o.ext_line_ref = l.ext_line_ref;
     if (l.source_line_id) o.source_line_id = l.source_line_id;
     if (l.description) o.description = l.description;
+    if (d.doc_type === 'GRN' && l.extra && Object.keys(l.extra).length) o.extra = l.extra;   // Draft 1: line extra.dn (GRN) round-trips
     return o;
   });
   return p;

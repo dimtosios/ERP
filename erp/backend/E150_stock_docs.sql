@@ -8,6 +8,7 @@
 -- Run order: after E140. Standalone: names no CRM object. Safe to re-run.
 -- Redefines: nothing. Enables catalogue rows of erp.doc_types (E120) and sets their posting columns (E130).
 -- T16      : doc_stock_validate calls erp.trf_adj_validate (E160) for every ADJ (transfer difference adjustments).
+-- Draft 1  : doc_stock_validate calls erp.grn_dn_validate (E190) for every GRN (lines read from a delivery note).
 -- Tests    : tests/E150_stock_docs_tests.sql, tests/E990 (registry)
 -- =====================================================================
 
@@ -101,6 +102,8 @@ begin
     if ck = 'customer' then probs := probs || erp.problem('invalid', 'counterparty_id', 'A goods receipt needs a supplier.'); end if;
     if d.extra ? 'mark' and (d.extra ->> 'mark') !~ '^[0-9]{1,20}$' then probs := probs || erp.problem('invalid', 'extra.mark', 'MARK: the myDATA number (digits).'); end if;
     if d.ext_date is not null and d.ext_date > d.doc_date then probs := probs || erp.problem('invalid', 'ext_date', 'The supplier''s document date is after the receipt.'); end if;
+    -- Draft 1 (E190): a GRN drafted from a supplier delivery note keeps unmatched / low-confidence lines flagged
+    if to_regprocedure('erp.grn_dn_validate(uuid,uuid)') is not null then probs := probs || erp.grn_dn_validate(p_tenant, p_doc); end if;
   end if;
   if d.doc_type in ('ADJ_IN', 'ADJ_OUT') then
     if nullif(d.extra ->> 'reason', '') is null then probs := probs || erp.problem('required', 'extra.reason', 'Choose the reason of the adjustment.');

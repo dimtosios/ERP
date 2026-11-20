@@ -240,6 +240,43 @@ with sync_playwright() as p:
     check(psql("select e.name || '/' || v.code from erp.expense_categories e join erp.vat_classes v on v.tenant_id = e.tenant_id and v.vat_class_id = e.default_vat_class_id "
                "join erp.tenants t on t.tenant_id = e.tenant_id where t.code = 'uitest' and e.code = 'LAB';")[1].strip() == "Dental lab/VAT24",
           "new expense category saved in the DB with its default VAT")
+    # Draft 1: supplier delivery note -> DRAFT GRN against the real database (default MOCK extractor): the file stored in
+    # erp.attachments (exact bytes, sha256), the draft by tax ID / barcode, unmatched lines block the post, fixed, posted
+    import hashlib
+    pdf = b"%PDF-1.4\n% owner flow\n" + b"z" * 300
+    pdf_path = tmp / "dn owner.pdf"; pdf_path.write_bytes(pdf)
+    psql("insert into erp.counterparties (tenant_id, name, kind, tax_id, country) select tenant_id, 'Ortho Supplies SA', 'supplier', '094014201', 'GR' from erp.tenants where code = 'uitest';")
+    GQ = "from erp.documents d join erp.tenants t using (tenant_id) where t.code = 'uitest' and d.doc_type = 'GRN' and d.client_key like 'dn:%'"
+    pg.goto(html.as_uri() + "#/stock/documents"); pg.wait_for_selector("#stk-new")
+    pg.select_option("#stk-newtype", "GRN"); pg.click("#stk-new"); pg.wait_for_selector("#dn-box")
+    pg.select_option("#d-wh", label="SER-MAIN · Serres main"); pg.set_input_files("#dn-file", str(pdf_path))
+    pg.click("#dn-create"); pg.wait_for_selector("#dn-mock", timeout=15000)
+    check(psql("select a.filename || '/' || a.mime || '/' || a.size_bytes || '/' || a.sha256 || '/' || (a.content = decode('%s', 'hex')) || '/' || (a.document_id = d.document_id) "
+               "from erp.attachments a join erp.documents d on d.tenant_id = a.tenant_id and d.client_key = 'dn:' || a.attachment_id;" % pdf.hex())[1].strip()
+          == "dn owner.pdf/application/pdf/%d/%s/true/true" % (len(pdf), hashlib.sha256(pdf).hexdigest()),
+          "delivery note: the PDF is stored in erp.attachments (exact bytes, sha256) and linked to the draft")
+    check(psql("select d.state || '/' || coalesce(d.doc_no, '-') || '/' || c.name || '/' || d.ext_number || '/' || (d.extra -> 'dn' ->> 'extractor') || '/' || "
+               "(select string_agg(coalesce(i.code, '-') || ':' || (l.extra -> 'dn' ->> 'status'), ',' order by l.line_no) from erp.document_lines l "
+               "left join erp.items i on i.tenant_id = l.tenant_id and i.item_id = l.item_id where l.tenant_id = d.tenant_id and l.document_id = d.document_id) "
+               "from erp.documents d join erp.tenants t using (tenant_id) join erp.counterparties c on c.tenant_id = d.tenant_id and c.counterparty_id = d.counterparty_id "
+               "where t.code = 'uitest' and d.doc_type = 'GRN' and d.client_key like 'dn:%';")[1].strip()
+          == "draft/-/Ortho Supplies SA/MOCK-0001/mock/BR-1:matched,-:unmatched,-:unmatched",
+          "delivery note: a DRAFT GRN (not posted), supplier by tax ID, line 1 by barcode, two lines not matched")
+    check(pg.locator("#doc-lines .dline.dl-flag").count() == 2 and "MOCK extractor - sample data." in pg.inner_text("#dn-mock"), "delivery note: unmatched lines highlighted, MOCK label")
+    pg.click("#drawer footer [data-act=doc-action][data-to=posted]"); pg.wait_for_function("document.getElementById('d-msg').textContent.length > 0")
+    check("Item not matched" in pg.inner_text("#d-msg") and psql("select d.state %s;" % GQ)[1].strip() == "draft", "delivery note: the real server refuses the post, still a draft")
+    for n in (2, 3):
+        pg.fill("#doc-lines .dline:nth-of-type(%d) .dl-code" % n, "BR-1"); pg.press("#doc-lines .dline:nth-of-type(%d) .dl-code" % n, "Tab")
+        pg.wait_for_function("n => document.querySelector('#doc-lines .dline:nth-of-type(' + n + ') .dl-name').textContent.indexOf('Bracket') >= 0", arg=n)
+    pg.click("#drawer footer [data-act=doc-action][data-to=posted]")
+    pg.wait_for_function("document.getElementById('drawer') && document.getElementById('drawer').textContent.indexOf('Posted') >= 0", timeout=15000)
+    check(psql("select d.state || '/' || d.doc_no || '/' || (select count(*) from erp.document_lines l where l.tenant_id = d.tenant_id and l.document_id = d.document_id and l.extra ? 'dn') || '/' || "
+               "(select count(*) from erp.attachments a where a.tenant_id = d.tenant_id and a.document_id = d.document_id and a.deleted_at is null) %s;" % GQ)[1].strip() == "posted/GRN-SER/000002/3/1",
+          "delivery note: items chosen, the owner posts GRN-SER/000002; the lines keep their note data, the file stays linked")
+    pg.wait_for_selector("#dn-files [data-act=dn-open]"); pg.click("#dn-files [data-act=dn-open]"); pg.wait_for_selector("#dn-files a.dn-link")
+    href = pg.get_attribute("#dn-files a.dn-link", "href")
+    check(pg.evaluate("u => fetch(u).then(r => r.arrayBuffer()).then(b => b.byteLength)", href) == len(pdf), "delivery note: Open serves the stored bytes back from the DB")
+    pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
     pg.context.close()
 
     pg = page(br, ANNA, "anna@ui.test")
