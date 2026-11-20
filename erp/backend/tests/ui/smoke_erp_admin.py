@@ -44,7 +44,7 @@ with sync_playwright() as p:
     # ---------- owner ----------
     pg = page(br, "owner")
     navs = pg.locator("#nav a").all_inner_texts()
-    check(navs == ["Home", "Master data", "Stock", "Transfers", "Admin"], "owner nav: Home, Master data, Stock, Transfers, Admin %s" % navs)
+    check(navs == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Admin"], "owner nav: Home, Master data, Stock, Transfers, Expenses, Admin %s" % navs)
     check("iSmile" in pg.inner_text(".top") and "SER" in pg.inner_text("#main"), "home: tenant + branches")
     pg.click("#nav a[data-to=admin]")
     pg.wait_for_selector("#m-table")

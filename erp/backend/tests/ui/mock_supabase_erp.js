@@ -3,6 +3,7 @@
 //   mock_session '1' = signed in;  mock_role = owner | manager | warehouse | accounting | clinic_user | readonly | none
 //   mock_fail = comma list of RPC names that answer ERP_VALIDATION;  mock_null = comma list that answer null (0 rows)
 //   mock_conflict '1' = member_bind answers bound_to_other_login
+//   mock_exp_limit = a number: the expense approval limit (thresholds.exp_value) the page starts with
 (function () {
   var CALLS = window.__calls = [];
   function ls(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -26,15 +27,16 @@
   // E150 (T11 / T12) document capabilities + stock.read
   var DOCCAPS = {
     owner: ['opn.read', 'opn.create', 'opn.approve', 'grn.read', 'grn.create', 'grn.approve', 'adj.read', 'adj.create', 'adj.approve', 'cons.read', 'cons.create', 'cons.approve',
-            'trf.read', 'trf.create', 'trf.approve'],
+            'trf.read', 'trf.create', 'trf.approve', 'exp.read', 'exp.create', 'exp.approve'],
     manager: ['opn.read', 'opn.create', 'grn.read', 'grn.create', 'grn.approve', 'adj.read', 'adj.create', 'adj.approve', 'cons.read', 'cons.create', 'cons.approve',
-              'trf.read', 'trf.create', 'trf.approve'],
-    warehouse: ['opn.read', 'grn.read', 'grn.create', 'adj.read', 'adj.create', 'cons.read', 'cons.create', 'trf.read', 'trf.create'],
-    accounting: ['opn.read', 'grn.read', 'adj.read', 'cons.read', 'trf.read'],
+              'trf.read', 'trf.create', 'trf.approve', 'exp.read', 'exp.create', 'exp.approve'],
+    warehouse: ['opn.read', 'grn.read', 'grn.create', 'adj.read', 'adj.create', 'cons.read', 'cons.create', 'trf.read', 'trf.create', 'exp.read'],
+    accounting: ['opn.read', 'grn.read', 'adj.read', 'cons.read', 'trf.read', 'exp.read', 'exp.create'],
     clinic_user: ['cons.read', 'cons.create'],
-    readonly: ['opn.read', 'grn.read', 'adj.read', 'cons.read', 'trf.read']
+    readonly: ['opn.read', 'grn.read', 'adj.read', 'cons.read', 'trf.read', 'exp.read']
   };
   Object.keys(CAPS).forEach(function (r) { CAPS[r] = CAPS[r].concat(DOCCAPS[r].map(function (c) { return 'doc.' + c; }), ['stock.read']); });
+  ['owner', 'manager', 'accounting'].forEach(function (r) { CAPS[r].push('expense.category.write'); });   // E180 (T19)
   var BR = [
     {branch_id: 'b1', code: 'SER', name: 'Serres', establishment_no: 0, address: 'Serres', active: true},
     {branch_id: 'b2', code: 'THE', name: 'Thessaloniki', establishment_no: 1, address: null, active: true},
@@ -107,9 +109,31 @@
     return o;
   }
   var ITEMBY = {'IT-001': {item_id: 'i1', name: 'Bracket 1'}, 'IT-002': {item_id: 'i2', name: 'Wire 2'}, 'IT-003': {item_id: 'i3', name: 'Elastic 3'}, '4006381333931': {item_id: 'i3', name: 'Elastic 3', code: 'IT-003'}};
-  var DCAP = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf'};
+  var DCAP = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp'};
+  // E180 (T19 / T20): expense categories and expenses. e1 posted in SER (paid by card), e2 posted in THE (owner only)
+  var EXPCATS = [{category_id: 'ec1', parent_id: null, code: 'RENT', name: 'Rent', path: 'RENT', default_vat_class_id: 'v0', vat_code: 'VAT0', vat_rate: '0.00', active: true},
+                 {category_id: 'ec2', parent_id: null, code: 'UTIL', name: 'Utilities', path: 'UTIL', default_vat_class_id: 'v1', vat_code: 'VAT24', vat_rate: '24.00', active: true},
+                 {category_id: 'ec3', parent_id: null, code: 'TEL', name: 'Telephone', path: 'TEL', default_vat_class_id: 'v1', vat_code: 'VAT24', vat_rate: '24.00', active: true},
+                 {category_id: 'ec4', parent_id: null, code: 'OLD', name: 'Old category', path: 'OLD', default_vat_class_id: null, vat_code: null, vat_rate: null, active: false}];
+  VATS.push({vat_class_id: 'v0', code: 'VAT0', name: 'VAT exempt', rate: '0.00', mydata_category: 7, exemption_code: null, active: true});
+  DOCS.push({document_id: 'e1', doc_type: 'EXP', state: 'posted', branch_id: 'b1', branch_code: 'SER', counterparty_id: 'p1', counterparty_name: 'Ortho Supplies SA', doc_no: 'EXP-SER/000001',
+             doc_date: '2026-11-15', ext_number: 'INV-55', version: 2, extra: {paid: true, payment_method: 'card'}, total_net: '100.00', total_vat: '24.00', total_gross: '124.00',
+             lines: [{line_id: 'e1-0', line_no: 1, expense_category_id: 'ec2', description: 'Electricity', qty: '1.0000', unit_price: '100.0000', vat_class_id: 'v1', net: '100.00', vat: '24.00', gross: '124.00'}]},
+            {document_id: 'e2', doc_type: 'EXP', state: 'posted', branch_id: 'b2', branch_code: 'THE', counterparty_id: null, doc_no: 'EXP-THE/000001',
+             doc_date: '2026-11-16', version: 2, extra: {}, total_net: '500.00', total_vat: '0.00', total_gross: '500.00',
+             lines: [{line_id: 'e2-0', line_no: 1, expense_category_id: 'ec1', qty: '1.0000', unit_price: '500.0000', vat_class_id: 'v0', net: '500.00', vat: '0.00', gross: '500.00'}]});
+  function expActions(d) {
+    var a = [], over = SET.thresholds && SET.thresholds.exp_value != null && Number(d.total_net || 0) > Number(SET.thresholds.exp_value);
+    if (!mine(d.branch_id)) return a;
+    if (d.state === 'draft' && can('doc.exp.approve')) a.push({to_state: 'posted', label: 'doc.action.post', action: 'post'});
+    else if (d.state === 'draft' && can('doc.exp.create')) a.push(over ? {to_state: 'pending_approval', label: 'doc.action.submit', action: 'none'} : {to_state: 'posted', label: 'doc.action.post', action: 'post'});
+    if (d.state === 'pending_approval' && can('doc.exp.approve')) a.push({to_state: 'posted', label: 'doc.action.approve', action: 'post'}, {to_state: 'draft', label: 'doc.action.reject', action: 'none'});
+    if (d.state === 'posted' && can('doc.exp.create')) a.push({to_state: 'cancelled', label: 'doc.action.cancel', action: 'cancel'});
+    return a;
+  }
   function docActions(d) {
     var c = DCAP[d.doc_type], a = [];
+    if (d.doc_type === 'EXP') return expActions(d);
     if (d.doc_type === 'TRF') {
       var src = mine(d.branch_id), dst = mine(whBranch(d.dest_warehouse_id));
       if (d.state === 'draft' && src && can('doc.trf.create')) a.push({to_state: 'dispatched', label: 'doc.action.dispatch', action: 'post'});
@@ -126,7 +150,10 @@
   function docOut(d) {
     var o = JSON.parse(JSON.stringify(d)); o.actions = docActions(d); o.can_edit = d.state === 'draft' && can('doc.' + DCAP[d.doc_type] + '.create');
     o.line_count = (d.lines || []).length;
-    o.problems = d.state === 'draft' ? (d.lines || []).filter(function (l) { return !l.item_id; }).map(function (l) { return {code: 'required', field: 'item_id', line_no: l.line_no, message: 'Item is required.'}; }) : [];
+    o.problems = d.state !== 'draft' ? [] : d.doc_type === 'EXP'
+      ? (d.lines || []).filter(function (l) { return !l.expense_category_id || !l.vat_class_id; }).map(function (l) { return {code: 'required', field: l.expense_category_id ? 'vat_class_id' : 'expense_category_id', line_no: l.line_no,
+          message: l.expense_category_id ? 'Choose the VAT class.' : 'Choose the expense category.'}; })
+      : (d.lines || []).filter(function (l) { return !l.item_id; }).map(function (l) { return {code: 'required', field: 'item_id', line_no: l.line_no, message: 'Item is required.'}; });
     if (!can('cost.read')) { delete o.total_cost; (o.lines || []).forEach(function (l) { delete l.cost_value; }); }
     return o;
   }
@@ -151,7 +178,8 @@
     if (!errs.length && !a.p_dry_run) rows.forEach(add);
     return {data: {dry_run: !!a.p_dry_run || errs.length > 0, rows: rows.length, created: rows.length, updated: 0, errors: errs}, error: null};
   }
-  var SET = {time_zone: 'Europe/Athens', negative_stock: 'warn', valuation_method: 'average', lock_date: null, hide_money: false, logo_url: null, version: 1};
+  var SET = {time_zone: 'Europe/Athens', negative_stock: 'warn', valuation_method: 'average', lock_date: null, hide_money: false, logo_url: null, version: 1,
+             thresholds: ls('mock_exp_limit') ? {exp_value: Number(ls('mock_exp_limit'))} : {}};   // mock_exp_limit: thresholds.exp_value at load
   var IDEM = {};
   function err(code, msg, detail) { return {data: null, error: {message: code + ': ' + msg, details: detail ? JSON.stringify(detail) : null, code: 'P0001'}}; }
   function can(c) { return (CAPS[ROLE] || []).indexOf(c) >= 0; }
@@ -187,7 +215,7 @@
       if (!can('tenant.settings.write')) return err('ERP_FORBIDDEN', 'no');
       var p = a.p_settings || {};
       if (p.version !== SET.version) return err('ERP_CONFLICT', 'version');
-      ['time_zone', 'negative_stock', 'lock_date', 'hide_money', 'logo_url'].forEach(function (k) { if (k in p) SET[k] = p[k]; });
+      ['time_zone', 'negative_stock', 'lock_date', 'hide_money', 'logo_url', 'thresholds'].forEach(function (k) { if (k in p) SET[k] = p[k]; });
       SET.version++; return {data: Object.assign({}, SET), error: null};
     },
     member_list: function (a) {
@@ -272,7 +300,7 @@
       var f = a.p_filter || {}, types = f.doc_type ? [f.doc_type] : (f.doc_types || []);
       types = types.filter(function (x) { return can('doc.' + DCAP[x] + '.read'); });
       if (!types.length) return err('ERP_FORBIDDEN', 'no');
-      var rows = DOCS.filter(function (d) { return types.indexOf(d.doc_type) >= 0 && (!f.state || d.state === f.state) && (d.doc_type !== 'TRF' || trfVisible(d))
+      var rows = DOCS.filter(function (d) { return types.indexOf(d.doc_type) >= 0 && (!f.state || d.state === f.state) && (d.doc_type !== 'TRF' || trfVisible(d)) && (d.doc_type !== 'EXP' || mine(d.branch_id))
           && (!f.branch_id || d.branch_id === f.branch_id || (d.doc_type === 'TRF' && whBranch(d.dest_warehouse_id) === f.branch_id)); })
         .map(function (d) { var o = docOut(d); delete o.lines; return o; });
       return {data: page(rows, a, function (r) { return r.document_id; }), error: null};
@@ -290,7 +318,15 @@
         var net = l.unit_price != null ? (Math.round(Number(l.qty) * Number(l.unit_price) * (1 - Number(l.discount_pct || 0) / 100) * 100) / 100).toFixed(2) : '0.00';
         return Object.assign({line_id: d.document_id + '-' + i, line_no: i + 1, item_code: code || '', item_name: code ? ITEMBY[code].name : '', qty_base: l.qty, net: net}, l);
       });
+      if (d.doc_type === 'EXP') (d.lines || []).forEach(function (l) {
+        var v = VATS.find(function (x) { return x.vat_class_id === l.vat_class_id; }), vat = v ? Math.round(Number(l.net) * Number(v.rate)) / 100 : 0;
+        l.vat = vat.toFixed(2); l.gross = (Number(l.net) + vat).toFixed(2);
+      });
       d.total_net = (d.lines || []).reduce(function (s, l) { return s + Number(l.net); }, 0).toFixed(2);
+      d.total_vat = (d.lines || []).reduce(function (s, l) { return s + Number(l.vat || 0); }, 0).toFixed(2);
+      d.total_gross = (d.lines || []).reduce(function (s, l) { return s + Number(l.gross || l.net); }, 0).toFixed(2);
+      d.counterparty_name = (CPS.find(function (c) { return c.counterparty_id === d.counterparty_id; }) || {}).name;
+      d.branch_code = (BR.find(function (b) { return b.branch_id === d.branch_id; }) || {}).code;
       d.warehouse_code = (WHS.find(function (w) { return w.warehouse_id === d.warehouse_id; }) || {}).code;
       return {data: docOut(d), error: null};
     },
@@ -345,6 +381,34 @@
       }
       d.state = a.p_to_state; if (o.reason) d.cancel_reason = o.reason; d.version++;
       return {data: {posted: false, warnings: [], document: docOut(d)}, error: null};
+    },
+    expense_category_list: function (a) {
+      if (!can('doc.exp.read')) return err('ERP_FORBIDDEN', 'no');
+      return {data: page(EXPCATS.filter(function (c) { return a.p_include_inactive || c.active; }), a, function (r) { return r.code; }), error: null};
+    },
+    expense_category_save: function (a) {
+      return saver(EXPCATS, 'category_id', 'expense.category.write', ['code', 'name'], a, 'p_category', function (r) {
+        var v = VATS.find(function (x) { return x.vat_class_id === r.default_vat_class_id; }), par = EXPCATS.find(function (x) { return x.category_id === r.parent_id; });
+        r.vat_code = v ? v.code : null; r.vat_rate = v ? v.rate : null; r.path = (par ? par.path + ' / ' : '') + r.code;
+      });
+    },
+    report_expenses: function (a) {
+      if (!can('doc.exp.read')) return err('ERP_FORBIDDEN', 'no');
+      var f = a.p_filter || {}, grp = f.group_by || 'category', by = {}, tot = {docs: 0, lines: 0, net: 0, vat: 0, gross: 0, paid_gross: 0};
+      DOCS.filter(function (d) { return d.doc_type === 'EXP' && d.state === 'posted' && mine(d.branch_id) && (!f.branch_id || d.branch_id === f.branch_id)
+                                   && (!f.date_from || d.doc_date >= f.date_from) && (!f.date_to || d.doc_date <= f.date_to); }).forEach(function (d) {
+        tot.docs++;
+        (d.lines || []).forEach(function (l) {
+          var k = grp === 'supplier' ? (d.counterparty_id || '') : l.expense_category_id, c = EXPCATS.find(function (x) { return x.category_id === k; }) || {};
+          var r = by[k] = by[k] || {key_id: k || null, code: grp === 'supplier' ? null : c.code, name: grp === 'supplier' ? (d.counterparty_name || null) : c.name, path: c.path, docs: 0, lines: 0, net: 0, vat: 0, gross: 0, paid_gross: 0, _d: {}};
+          if (!r._d[d.document_id]) { r._d[d.document_id] = 1; r.docs++; }
+          [r, tot].forEach(function (x) { x.lines++; x.net += Number(l.net); x.vat += Number(l.vat); x.gross += Number(l.gross); if ((d.extra || {}).paid) x.paid_gross += Number(l.gross); });
+        });
+      });
+      var rows = Object.keys(by).map(function (k) { var r = by[k]; delete r._d; ['net', 'vat', 'gross', 'paid_gross'].forEach(function (m) { r[m] = r[m].toFixed(2); }); return r; })
+        .sort(function (x, y) { return Number(y.gross) - Number(x.gross); });
+      ['net', 'vat', 'gross', 'paid_gross'].forEach(function (m) { tot[m] = tot[m].toFixed(2); });
+      return {data: {group_by: grp, date_from: f.date_from || '2026-11-01', date_to: f.date_to || '2026-11-18', rows: rows, totals: tot, truncated: false}, error: null};
     },
     trf_get: function (a) {
       if (!can('doc.trf.read')) return err('ERP_FORBIDDEN', 'no');

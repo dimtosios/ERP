@@ -175,6 +175,7 @@ async function settingsLoad() {
     field('s-val', 'settings.f.valuation', inp('s-val', t('settings.val.' + s.valuation_method), 'text', true)) + '<p class="muted">' + esc(t('settings.val_note')) + '</p>' +
     field('s-lock', 'settings.f.lock_date', inp('s-lock', fmtDate(s.lock_date), 'text', ro)) +
     chk('s-hide', 'settings.f.hide_money', s.hide_money, ro) +
+    field('s-explim', 'settings.f.exp_limit', inp('s-explim', (s.thresholds || {}).exp_value != null ? s.thresholds.exp_value : '', 'text', ro)) +
     field('s-logo', 'settings.f.logo_url', inp('s-logo', s.logo_url, 'url', ro)) +
     '<div class="msg bad" id="s-msg"></div>' +
     (ro ? '' : '<div class="row end"><button type="submit" class="primary" id="s-save">' + esc(t('settings.save')) + '</button></div>') + '</form></div>');
@@ -189,6 +190,9 @@ FORM.settings = async function () {
   if (lock !== (s.lock_date || null)) p.lock_date = lock;
   if ($('s-hide').checked !== !!s.hide_money) p.hide_money = $('s-hide').checked;
   var logo = val('s-logo').trim() || null; if (logo !== (s.logo_url || null)) p.logo_url = logo;
+  var limTxt = val('s-explim').trim().replace(',', '.'), lim = limTxt === '' ? null : Number(limTxt), thr = Object.assign({}, s.thresholds || {});
+  if (limTxt !== '' && (isNaN(lim) || lim < 0)) { msg.textContent = t('save.not_saved', {reason: t('settings.exp_limit_invalid')}); return; }
+  if (lim !== (thr.exp_value != null ? Number(thr.exp_value) : null)) { if (lim === null) delete thr.exp_value; else thr.exp_value = lim; p.thresholds = thr; }
   b.disabled = true; b.textContent = t('drawer.saving'); msg.textContent = '';
   var r = await api('settings_save', {p_settings: p}, {write: true, key: ADM.settingsKey || (ADM.settingsKey = uuid())});
   b.disabled = false; b.textContent = t('settings.save');

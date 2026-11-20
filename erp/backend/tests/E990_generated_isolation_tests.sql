@@ -154,6 +154,9 @@ do $do$ begin   -- ids of later files' rows of tenant B
   if to_regclass('erp.documents') is not null then
     insert into t.bids select document_id::text from erp.documents where tenant_id = t.b() union select line_id::text from erp.document_lines where tenant_id = t.b();
   end if;
+  if to_regclass('erp.expense_categories') is not null then   -- E180 (T19): the default categories of B (tenant trigger)
+    insert into t.bids select category_id::text from erp.expense_categories where tenant_id = t.b();
+  end if;
 end $do$;
 create function t.bid(p_sql text) returns uuid language plpgsql security definer as $$ declare v uuid; begin execute p_sql into v; return v; end $$;
 create function t.bb() returns uuid language sql security definer as $$ select t.br(t.b(), 'B1') $$;
@@ -351,6 +354,13 @@ do $do$ begin   -- E150 rows (T11 / T12)
       ('erp_api.trf_get(uuid)', 'doc.trf.read', $$select erp_api.trf_get(t.bid('select document_id from erp.documents where notes = ''A transfer'''))$$,
          $$select erp_api.trf_get(t.bid('select document_id from erp.documents where notes = ''B transfer'''))$$),
       ('erp_api.trf_warehouses()', 'doc.trf.read', $$select erp_api.trf_warehouses()$$, null);   -- T18: destinations of every branch
+  end if;
+  if to_regprocedure('erp_api.report_expenses(jsonb)') is not null then   -- E180 T19 / T20
+    insert into t.rpc (fn, cap, call, cross_call) values
+      ('erp_api.expense_category_list(boolean,jsonb,integer)', 'doc.exp.read', $$select erp_api.expense_category_list(true)$$, null),
+      ('erp_api.expense_category_save(jsonb,uuid)', 'expense.category.write', $$select erp_api.expense_category_save('{"code": "RX", "name": "Role test"}', gen_random_uuid())$$,
+         $$select erp_api.expense_category_save(jsonb_build_object('code', 'RY', 'name', 'x', 'parent_id', t.bid('select category_id from erp.expense_categories where tenant_id = t.b() limit 1')), gen_random_uuid())$$),
+      ('erp_api.report_expenses(jsonb)', 'doc.exp.read', $$select erp_api.report_expenses()$$, $$select erp_api.report_expenses(jsonb_build_object('branch_id', t.bb()))$$);
   end if;
   if to_regprocedure('erp_api.recost_status()') is not null then   -- E140 T13
     insert into t.rpc (fn, cap, call, cross_call) values

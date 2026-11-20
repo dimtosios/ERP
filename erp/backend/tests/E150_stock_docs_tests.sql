@@ -43,7 +43,7 @@ grant select, insert, update on t.v to authenticated;
 set local role authenticated;
 select t.as(1);
 select t.ok((select string_agg(r ->> 'code', ',' order by r ->> 'code') from jsonb_array_elements((erp_api.series_create_defaults(t.br(t.a(), 'A1'), gen_random_uuid())) -> 'created') r)
-            = 'ADJ_IN-A1,ADJ_OUT-A1,CONS-A1,GRN-A1,OPN,TRF-A1', 'series defaults: ADJ+, ADJ-, CONS, GRN, TRF (E160) per branch, OPN organisation-wide (the enabled stock types)');
+            = 'ADJ_IN-A1,ADJ_OUT-A1,CONS-A1,EXP-A1,GRN-A1,OPN,TRF-A1', 'series defaults: ADJ+, ADJ-, CONS, GRN, TRF (E160), EXP (E180) per branch, OPN organisation-wide (the enabled types)');
 select erp_api.series_create_defaults(t.br(t.a(), 'A2'), gen_random_uuid());
 
 -- ---------- GRN ----------

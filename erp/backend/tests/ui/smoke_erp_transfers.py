@@ -50,7 +50,7 @@ def scenario(br):
 
     # ---------- owner: list, filters ----------
     pg = page(br, "owner")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Admin"], "owner nav has Transfers")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Admin"], "owner nav has Transfers")
     wait_text(pg, "#trf-table", "TRF-SER/000001")
     txt = pg.inner_text("#trf-table")
     check("TRF-THE/000003" in txt and "THE-MAIN" in txt and "Dispatched (in transit)" in txt and pg.locator("#trf-table .badge.warn").count() == 2,
@@ -146,7 +146,7 @@ def scenario(br):
 
     # ---------- warehouse of the destination (b1), phone width: receive everything ----------
     pg = page(br, "warehouse", w=390, h=800)
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers"], "warehouse nav has Transfers")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses"], "warehouse nav has Transfers (and Expenses: read)")
     wait_text(pg, "#trf-table", "TRF-THE/000003")
     pg.click("#trf-table tbody tr.click:has-text('TRF-THE/000003')"); pg.wait_for_selector("#drawer footer [data-act=trf-receive]")
     check(pg.locator("#drawer footer [data-act=doc-action][data-to=cancelled]").count() == 0 and pg.input_value("#d-wh-ro") == "THE-MAIN",

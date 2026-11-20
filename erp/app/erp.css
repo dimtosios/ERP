@@ -77,6 +77,10 @@ tr.click{cursor:pointer} tr.click:hover{background:var(--surface2)}
 .dline input.dl-ref{width:140px}
 .dline .dl-amt{min-width:80px;text-align:right}
 .dline input.rc-reason{flex:1 1 180px;min-width:0}
+.dline select.dl-cat{flex:1 1 200px;min-width:0;width:auto}
+.dline input.dl-desc{flex:1 1 160px;min-width:0}
+.dline input.dl-net{width:96px}
+.dline select.dl-vat{width:auto}
 .drawer footer{flex-wrap:wrap}
 @media (max-width:600px){.top{padding:8px 12px}.main{padding:12px}
   .dline input.dl-qty,.dline input.dl-price,.dline input.dl-disc{width:calc(33% - 6px)}}

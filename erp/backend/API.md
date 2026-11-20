@@ -364,6 +364,35 @@ doc_set_state('…trf id…', 'received_with_difference',
     "document": {"doc_type": "TRF", "state": "received_with_difference", "doc_no": "TRF-A1/000004", …}}
 ```
 
+## E180 expenses (T19 / T20 lite: EXP, expense categories, expense report)
+EXP is a normal E130 document (`doc_save_draft('EXP', …)`, `doc_get`, `doc_list`, `doc_set_state`, `doc_copy`,
+`doc_delete_draft`). Header: `branch_id` (numbered per branch at post: series `EXP-<branch>`), `doc_date`,
+`counterparty_id` (optional supplier; a customer-only counterparty is a problem), `ext_number` / `ext_date` (supplier's
+document), `notes`, `extra`: `mark` (digits), `paid` (boolean, paid on the spot), `payment_method` (`cash` | `card` |
+`bank` | `other`, only when paid), `cost_centre` (60). Lines: `{expense_category_id, description, qty (1), unit_price
+(the net amount), vat_class_id (default: the category's default VAT class when the key is absent)}`; net / VAT / gross
+per line by the core rule (VAT rounded per line, half up). No item on an EXP line. No stock, AP or payment effect.
+Transitions: draft -> posted (`doc.exp.create` up to `thresholds.exp_value` on the net; `doc.exp.approve` any value),
+draft -> pending_approval (create, above the limit) -> posted (approve) / -> draft (reject, approve), posted ->
+cancelled (`doc.exp.create`, reason required). Lock date as every document. Roles: create owner / manager / accounting,
+approve owner / manager, read also warehouse / readonly.
+
+### `expense_category_list(p_include_inactive = false, p_cursor, p_limit = 200) -> {rows, next}`
+Cap `doc.exp.read`. Rows `{category_id, parent_id, code, name, path, default_vat_class_id, vat_code, vat_rate, active,
+updated_at}` ordered by code; next = `{code, category_id}`. Every tenant starts with 10 defaults (RENT, UTIL, TEL,
+OFFICE, FEES, MAINT, MKT, TRAVEL, BANK, OTHER).
+
+### `expense_category_save(p_category jsonb, p_idempotency_key) -> category`
+Cap `expense.category.write` (owner, manager, accounting). Keys `category_id` (update), `parent_id`, `code`, `name`,
+`default_vat_class_id`, `active`. Tree of 8 levels, no cycle; deactivation refused while an active sub-category exists.
+
+### `report_expenses(p_filter = {}) -> {group_by, date_from, date_to, rows, totals, truncated}`
+Cap `doc.exp.read`; posted EXP of the caller's branches. Filter `group_by` (`category` | `supplier`), `date_from` /
+`date_to` (default this month to today), `branch_id`, `category_id` (with sub-categories), `counterparty_id`. Rows
+`{key_id, code, name, path (category), docs, lines, net, vat, gross, paid_gross}` by gross desc (at most 1000);
+`totals {docs, lines, net, vat, gross, paid_gross}`. View `erp.rpt_erp_expenses` (one row per posted EXP line,
+caller's RLS).
+
 ## Front-end (T04): which screen calls what
 | Screen | Calls | Capability shown / used |
 |---|---|---|
@@ -378,6 +407,9 @@ doc_set_state('…trf id…', 'received_with_difference',
 | Stock > Negative stock | `report_negative_stock` | `stock.read` |
 | Stock > Alerts | `alert_list`, `alert_resolve` | `alert.read` / `alert.resolve` |
 | Transfers (T18) | `doc_list` (`doc_type: TRF`, filters `state`, `branch_id`; keyset), `trf_warehouses`, `warehouse_list` (source), row -> `trf_get` drawer (the stock document drawer: source / destination / delivery, lines by `item_lookup`; buttons from `actions`: Dispatch -> `doc_set_state('dispatched')` with the warnings dialog -> `ack_warnings`, Cancel with a reason); "Confirm receipt" (one button for the two receive actions) -> receipt form by line -> `doc_set_state('received' \| 'received_with_difference', {receipt_date, lines})`; generated adjustments open in the stock drawer (`doc_get`; TRANSIT warehouse and lines read-only) | menu `doc.trf.read`; New: `doc.trf.create`; buttons from `actions` |
+| Expenses (T20) > List | `doc_list` (`doc_type: EXP`, filters `state`, `branch_id`, `date_from`, `q`; keyset), `expense_category_list`, `vat_class_list`, `counterparty_list` (suppliers), row -> `doc_get` drawer (the stock document drawer, DOC_FORM.EXP: branch, date, supplier, supplier's number / date, MARK, paid + method, cost centre; lines category / description / net / VAT class with VAT and gross; buttons from `actions`, cancel / reject with a reason) | menu `doc.exp.read`; New: `doc.exp.create` |
+| Expenses > Categories | `expense_category_list(true)`, `expense_category_save` | tab `doc.exp.read`; New / Save: `expense.category.write` |
+| Expenses > Report | `report_expenses` (by category / supplier, dates, branch), CSV download built in the page | `doc.exp.read` |
 Admin menu entry: any of `member.read`, `branch.write`, `tenant.settings.read` (owner, manager, accounting).
 Master data menu entry: any of `item.read`, `warehouse.read`, `counterparty.read`, `series.read` (every role).
 All calls go through `api()` (00_core.js): idempotency key per drawer (renewed after a success), 8 s timeout,

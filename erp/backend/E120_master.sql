@@ -59,8 +59,12 @@ begin
     when 'counterparty' then exists (select 1 from erp.counterparties x where x.tenant_id = p_tenant and x.counterparty_id = p_id)
     when 'series'    then exists (select 1 from erp.series x where x.tenant_id = p_tenant and x.series_id = p_id)
     else false end;
+  -- E180 (T19): expense categories. A separate statement, planned only when asked (the table is created by E180)
+  if p_kind = 'expense_category' then
+    ok := exists (select 1 from erp.expense_categories x where x.tenant_id = p_tenant and x.category_id = p_id);
+  end if;
   if p_id is null or not ok then
-    perform erp.err('ERP_TENANT', format('%s %s does not belong to your organisation.', initcap(p_kind), coalesce(p_id::text, 'null')));
+    perform erp.err('ERP_TENANT', format('%s %s does not belong to your organisation.', initcap(replace(p_kind, '_', ' ')), coalesce(p_id::text, 'null')));
   end if;
 end $$;
 

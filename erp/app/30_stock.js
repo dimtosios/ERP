@@ -11,9 +11,11 @@ var DOC_FORM = {   // type -> header fields and line columns
   ADJ_IN: {head: ['warehouse', 'date', 'reason', 'notes'], price: 'cost_optional', reasons: ['found', 'correction']},
   ADJ_OUT: {head: ['warehouse', 'date', 'reason', 'notes'], reasons: ['damaged', 'expired', 'lost', 'correction']},
   CONS: {head: ['warehouse', 'date', 'cost_centre', 'ext_ref', 'notes'], lineRef: true},
-  TRF: {head: ['warehouse', 'dest', 'date', 'delivery', 'notes']}   // T18 (35_transfers.js): source, destination, no price
+  TRF: {head: ['warehouse', 'dest', 'date', 'delivery', 'notes']},   // T18 (35_transfers.js): source, destination, no price
+  // T20 (40_expenses.js): no warehouse; lines = category / description / net / VAT class (expLineRow, expReadLines)
+  EXP: {head: ['branch', 'date', 'supplier', 'ext_number', 'ext_date', 'mark', 'paid', 'cost_centre', 'notes'], price: 'net', expense: true}
 };
-function docCap(type, kind) { var p = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf'}[type]; return 'doc.' + p + '.' + kind; }
+function docCap(type, kind) { var p = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp'}[type]; return 'doc.' + p + '.' + kind; }
 function stockReadTypes() { return STOCK_TYPES.filter(function (x) { return can(docCap(x, 'read')); }); }
 function qtyTxt(n) { var v = Number(n); return isNaN(v) ? '' : v.toLocaleString('en-GB', {maximumFractionDigits: 4}); }
 function stateBadge(st) { return '<span class="badge ' + ({posted: 'good', draft: '', pending_approval: 'warn', cancelled: 'bad', dispatched: 'warn', received: 'good', received_with_difference: 'warn', closed: 'good'}[st] || '') + '">' + esc(t('doc.state.' + st)) + '</span>'; }
@@ -95,7 +97,7 @@ function stkCall() {
   return ['alert_list', {p_filter: {}, p_limit: 50}];
 }
 async function stkLoad(reset) {
-  if (!$('stk-body')) { if ($('trf-body')) trfLoad(true); return; }   // the document drawer is shared with the Transfers screen
+  if (!$('stk-body')) { if ($('trf-body')) trfLoad(true); else if ($('exp-body')) expLoad(true); return; }   // the drawer is shared with Transfers / Expenses
   var my = ++STK.seq, c = stkCall(), tab = STK.tab;
   c[1].p_cursor = reset ? null : STK.next;
   var r = await api(c[0], c[1]);
@@ -185,6 +187,7 @@ ACT['stk-doc'] = async function (el) {
   docDrawer(r.data);
 };
 function docLineRow(l, i, form, ro) {
+  if (form.expense) return expLineRow(l, i, ro);
   return '<div class="dline" data-i="' + i + '">' +
     '<div class="dl-item"><input class="dl-code" placeholder="' + esc(t('doc.f.item')) + '" value="' + esc(l.item_code || '') + '"' + (ro ? ' disabled' : '') + '>' +
     '<span class="muted dl-name">' + esc(l.item_name || '') + (l.on_hand != null ? ' · ' + esc(t('doc.on_hand', {qty: qtyTxt(l.on_hand)})) : '') + '</span></div>' +
@@ -205,6 +208,8 @@ function docHead(d, form, ro) {
       inp('d-wh-ro', d.warehouse_code || '', 'text', true));
     else if (f === 'warehouse') h += field('d-wh', d.doc_type === 'TRF' ? 'trf.f.source' : 'doc.f.warehouse', sel('d-wh', [['', t('md.choose')]].concat(whs), d.warehouse_id || '', ro));
     else if (f === 'dest') h += trfDestField(d, ro);
+    else if (f === 'branch') h += expBranchField(d, ro);
+    else if (f === 'paid') h += expPaidFields(d, ro);
     else if (f === 'delivery') h += trfDeliveryFields(d, ro);
     else if (f === 'date') h += field('d-date', 'doc.f.date', inp('d-date', fmtDate(d.doc_date), 'text', ro));
     else if (f === 'supplier') h += field('d-cp', 'doc.f.supplier', sel('d-cp', [['', t('md.choose')]].concat((STK.sups || []).map(function (c) { return [c.counterparty_id, c.name]; })), d.counterparty_id || '', ro));
@@ -238,7 +243,7 @@ function docDrawer(d) {
         '<h2 style="margin-top:14px">' + esc(t('doc.lines')) + '</h2><div id="doc-lines">' + DOCD.lines.map(function (l, i) { return docLineRow(l, i, form, lro); }).join('') + '</div>' +
         (lro ? '' : '<button class="link" data-act="doc-line-add" id="doc-line-add">' + esc(t('doc.add_line')) + '</button>') +
         (d.doc_type === 'TRF' ? trfSection(d) : '') +
-        (d.document_id && form.price ? '<p id="doc-totals"><b>' + esc(t('doc.total_net', {v: eur(d.total_net)})) + '</b></p>' : '') +
+        (d.document_id && form.price ? (form.expense ? expTotals(d) : '<p id="doc-totals"><b>' + esc(t('doc.total_net', {v: eur(d.total_net)})) + '</b></p>') : '') +
         (d.total_cost != null && d.state === 'posted' ? '<p class="muted">' + esc(t('doc.total_cost', {v: eur(d.total_cost)})) + '</p>' : '') +
         (probs ? '<div class="msg" id="doc-problem-box">' + esc(t('doc.problems')) + probs + '</div>' : '');
     },
@@ -246,6 +251,7 @@ function docDrawer(d) {
     onSaved: function (doc) { if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else docDrawer(doc); stkLoad(true); }});
 }
 function docReadLines() {
+  if (DOCD.form.expense) return expReadLines();
   var rows = document.querySelectorAll('#doc-lines .dline');
   DOCD.lines = Array.prototype.map.call(rows, function (r, i) {
     var o = DOCD.lines[i] || {}, q = function (c) { var e = r.querySelector(c); return e ? e.value.trim() : ''; };
@@ -263,6 +269,7 @@ function docPayload() {
   var wh = (STK.whs || []).find(function (w) { return w.warehouse_id === val('d-wh'); });
   p.warehouse_id = $('d-wh') ? (val('d-wh') || null) : (d.warehouse_id || null);
   p.branch_id = wh ? wh.branch_id : (d.branch_id || (S.me.branches[0] || {}).branch_id || null);
+  if ($('d-branch')) p.branch_id = val('d-branch') || null;
   if ($('d-dest')) p.dest_warehouse_id = val('d-dest') || null;
   if ($('d-carrier')) { var dl = {carrier: val('d-carrier').trim(), vehicle: val('d-vehicle').trim()}; if (!dl.carrier) delete dl.carrier; if (!dl.vehicle) delete dl.vehicle; extra.delivery = dl; }
   var dt = parseDate(val('d-date')); if (dt) p.doc_date = dt;
@@ -272,10 +279,12 @@ function docPayload() {
   if ($('d-mark') && val('d-mark').trim()) extra.mark = val('d-mark').trim();
   if ($('d-reason') && val('d-reason')) extra.reason = val('d-reason');
   if ($('d-cc') && val('d-cc').trim()) extra.cost_centre = val('d-cc').trim();
+  if ($('d-paid')) { extra.paid = $('d-paid').checked; if (extra.paid && val('d-pm')) extra.payment_method = val('d-pm'); }
   if ($('d-extref')) p.ext_ref = val('d-extref').trim();
   if ($('d-notes')) p.notes = val('d-notes').trim();
-  if (form.head.some(function (f) { return f === 'mark' || f === 'reason' || f === 'cost_centre'; })) p.extra = extra;
+  if (form.head.some(function (f) { return f === 'mark' || f === 'reason' || f === 'cost_centre' || f === 'paid'; })) p.extra = extra;
   if (form.head.indexOf('delivery') >= 0) { if (Object.keys(extra.delivery || {}).length) p.extra = {delivery: extra.delivery}; else p.extra = {}; }
+  if (form.expense) { p.lines = expPayloadLines(docReadLines()); return p; }
   p.lines = docReadLines().filter(function (l) { return l.item_id || l.qty; }).map(function (l) {
     var o = {item_id: l.item_id, qty: l.qty};
     if (l.unit_price !== undefined && l.unit_price !== '') o.unit_price = l.unit_price;
@@ -290,7 +299,7 @@ function docPayload() {
 ACT['doc-line-add'] = function () {
   docReadLines(); DOCD.lines.push({});
   var box = $('doc-lines'); box.insertAdjacentHTML('beforeend', docLineRow({}, DOCD.lines.length - 1, DOCD.form, false));
-  var last = box.querySelectorAll('.dl-code'); if (last.length) last[last.length - 1].focus();
+  var last = box.querySelectorAll('.dline'), f = last.length ? last[last.length - 1].querySelector('input,select') : null; if (f) f.focus();
   if (D) D.dirty = true;
 };
 ACT['doc-line-del'] = function (el) {

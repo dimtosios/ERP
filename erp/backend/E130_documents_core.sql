@@ -19,6 +19,9 @@
 --            doc_set_state), the parent notification erp.doc_ref_changed (a document that references another one
 --            changed state: the parent type's action_fn decides), state received_with_difference, cost rule
 --            'transfer', transit warehouse allowed on system documents (the TRF difference ADJ_OUT, E160).
+-- T19      : document_lines.expense_category_id (an expense line: category instead of an item; FK, table and the EXP
+--            type in E180); doc_save_draft accepts it (tenant check, default VAT class of the category), doc_line_json
+--            returns it.
 -- =====================================================================
 
 do $$ begin
@@ -169,6 +172,10 @@ create table if not exists erp.document_lines (
 create index if not exists document_lines_item_idx on erp.document_lines (tenant_id, item_id);
 create index if not exists document_lines_source_idx on erp.document_lines (tenant_id, source_line_id) where source_line_id is not null;
 create index if not exists document_lines_vat_idx on erp.document_lines (tenant_id, vat_class_id) where vat_class_id is not null;
+-- T19: an expense line carries an expense category instead of an item (02 "Expenses"; EXP now, PINV service lines
+-- later). The foreign key to erp.expense_categories is added by E180, which creates that table.
+alter table erp.document_lines add column if not exists expense_category_id uuid;
+create index if not exists document_lines_expcat_idx on erp.document_lines (tenant_id, expense_category_id) where expense_category_id is not null;
 
 -- ---------------------------------------------------------------------
 -- 3. Immutability (02: a non-draft document is never edited; whitelist notes / due_date). The posting / state code
@@ -311,7 +318,7 @@ language sql stable security definer set search_path = '' as $$
   select jsonb_build_object('line_id', l.line_id, 'line_no', l.line_no, 'item_id', l.item_id, 'item_code', i.code, 'item_name', i.name,
                             'description', l.description, 'qty', l.qty, 'unit_id', l.unit_id, 'unit_code', u.code, 'qty_base', l.qty_base,
                             'unit_price', l.unit_price, 'discount_pct', l.discount_pct, 'vat_class_id', l.vat_class_id, 'net', l.net, 'vat', l.vat, 'gross', l.gross,
-                            'source_line_id', l.source_line_id, 'ext_line_ref', l.ext_line_ref, 'extra', l.extra)
+                            'source_line_id', l.source_line_id, 'ext_line_ref', l.ext_line_ref, 'extra', l.extra, 'expense_category_id', l.expense_category_id)
       || case when p_cost then jsonb_build_object('unit_cost', l.unit_cost, 'cost_value', l.cost_value) else '{}'::jsonb end
     from (select 1) one
     left join erp.items i on i.tenant_id = l.tenant_id and i.item_id = l.item_id
@@ -612,7 +619,8 @@ end $$;
 -- branch_id, doc_date (default today), series_id, warehouse_id, dest_warehouse_id, counterparty_id, ref_document_id,
 -- ext_number, ext_date, due_date, notes, ext_ref, extra (keys of doc_types.header_extra), lines: [{item_id,
 -- description, qty, unit_id (default: the item's base unit), unit_price, discount_pct, vat_class_id (default: the
--- item's), ext_line_ref, source_line_id, extra (keys of doc_types.line_extra)}] (the list REPLACES the lines; at
+-- item's; T19: else the expense category's default), ext_line_ref, source_line_id, expense_category_id (T19), extra (keys
+-- of doc_types.line_extra)}] (the list REPLACES the lines; at
 -- most 500). Shape errors and ids of another tenant refuse the save; business problems are returned in `problems`
 -- (a draft may be incomplete) and block posting.
 create or replace function erp_api.doc_save_draft(p_type text, p_doc jsonb, p_idempotency_key uuid) returns jsonb
@@ -620,7 +628,7 @@ language plpgsql security definer set search_path = '' set statement_timeout = '
 declare m erp.members; prev jsonb; payload jsonb := jsonb_build_object('type', p_type, 'doc', p_doc); dt erp.doc_types; old erp.documents; d erp.documents;
         id uuid; probs jsonb := '[]'; v_branch uuid; v_date date; e jsonb; n int := 0; k text; v_wh uuid; v_dwh uuid; v_cp uuid; v_ref uuid; v_ser uuid;
         it erp.items; v_unit uuid; v_vat uuid; v_rate numeric; q numeric; pr numeric; disc numeric; net numeric; vat numeric; v_src uuid; res jsonb;
-        lines jsonb; v_ext_date date; v_due date; isnew boolean;
+        lines jsonb; v_ext_date date; v_due date; isnew boolean; v_cat uuid;
 begin
   m := erp.require_member();
   prev := erp.idem_begin(m.tenant_id, p_idempotency_key, 'doc_save_draft', payload);
@@ -698,17 +706,20 @@ begin
       n := n + 1;
       if jsonb_typeof(e) <> 'object' then probs := probs || erp.problem('invalid', 'lines', 'A line must be an object.', n); continue; end if;
       probs := probs || (select coalesce(jsonb_agg(erp.problem('not_editable', x, format('%s cannot be set on a line.', x), n)), '[]'::jsonb) from jsonb_object_keys(e) x
-                          where not (x = any (array['line_id', 'item_id', 'description', 'qty', 'unit_id', 'unit_price', 'discount_pct', 'vat_class_id', 'ext_line_ref', 'source_line_id', 'extra'])));
+                          where not (x = any (array['line_id', 'item_id', 'description', 'qty', 'unit_id', 'unit_price', 'discount_pct', 'vat_class_id', 'ext_line_ref', 'source_line_id',
+                                                    'expense_category_id', 'extra'])));
       if erp.jset(e, 'item_id') then perform erp.require_own(m.tenant_id, 'item', erp.try_uuid(e ->> 'item_id')); end if;
       if erp.jset(e, 'unit_id') then perform erp.require_own(m.tenant_id, 'unit', erp.try_uuid(e ->> 'unit_id')); end if;
       if erp.jset(e, 'vat_class_id') then perform erp.require_own(m.tenant_id, 'vat', erp.try_uuid(e ->> 'vat_class_id')); end if;
+      if erp.jset(e, 'expense_category_id') then perform erp.require_own(m.tenant_id, 'expense_category', erp.try_uuid(e ->> 'expense_category_id')); end if;
       if erp.jset(e, 'source_line_id') then
         if not exists (select 1 from erp.document_lines x where x.tenant_id = m.tenant_id and x.line_id = erp.try_uuid(e ->> 'source_line_id')) then
           perform erp.err('ERP_TENANT', 'A source line does not belong to your organisation.'); end if;
         -- F2-06: the caller must be able to read the source document (branch and type), as doc_convert requires
         perform erp.doc_visible(m.tenant_id, (select x.document_id from erp.document_lines x where x.tenant_id = m.tenant_id and x.line_id = (e ->> 'source_line_id')::uuid));
       end if;
-      if not erp.jset(e, 'item_id') and not erp.jset(e, 'description') then probs := probs || erp.problem('required', 'item_id', 'Item or description is required.', n); end if;
+      if not erp.jset(e, 'item_id') and not erp.jset(e, 'description') and not erp.jset(e, 'expense_category_id') then
+        probs := probs || erp.problem('required', 'item_id', 'Item or description is required.', n); end if;
       if not erp.jset(e, 'qty') or erp.try_numeric(e ->> 'qty') is null then probs := probs || erp.problem('invalid', 'qty', 'Quantity must be a number.', n);
       elsif abs(erp.try_numeric(e ->> 'qty')) >= 1e12 or erp.try_numeric(e ->> 'qty') <> round(erp.try_numeric(e ->> 'qty'), 4) then
         probs := probs || erp.problem('invalid', 'qty', 'Quantity: at most 4 decimals.', n); end if;
@@ -749,6 +760,10 @@ begin
       if erp.jset(e, 'item_id') then select * into it from erp.items where tenant_id = m.tenant_id and item_id = (e ->> 'item_id')::uuid; end if;
       v_unit := coalesce(erp.try_uuid(e ->> 'unit_id'), it.base_unit_id);
       v_vat := case when e ? 'vat_class_id' then erp.try_uuid(e ->> 'vat_class_id') else case when dt.price_kind = 'sale' then it.vat_class_id end end;
+      v_cat := erp.try_uuid(e ->> 'expense_category_id');
+      if v_cat is not null and not (e ? 'vat_class_id') then   -- T19: the category's default VAT class (separate statement: E180 table)
+        select x.default_vat_class_id into v_vat from erp.expense_categories x where x.tenant_id = m.tenant_id and x.category_id = v_cat;
+      end if;
       select x.rate into v_rate from erp.vat_classes x where x.tenant_id = m.tenant_id and x.vat_class_id = v_vat;
       q := round(erp.try_numeric(e ->> 'qty'), 4);
       pr := round(erp.try_numeric(e ->> 'unit_price'), 4);
@@ -757,10 +772,10 @@ begin
       vat := coalesce(round(net * v_rate / 100, 2), 0);
       v_src := erp.try_uuid(e ->> 'source_line_id');
       insert into erp.document_lines (tenant_id, document_id, line_no, item_id, description, qty, unit_id, qty_base, unit_price, discount_pct, vat_class_id,
-                                      net, vat, gross, source_line_id, ext_line_ref, extra)
+                                      net, vat, gross, source_line_id, ext_line_ref, extra, expense_category_id)
       values (m.tenant_id, d.document_id, n, it.item_id, nullif(btrim(e ->> 'description'), ''), q, v_unit,
               q,                                   -- qty_base = qty x factor; base unit only until T38 (validation flags other units)
-              pr, disc, v_vat, net, vat, net + vat, v_src, nullif(btrim(e ->> 'ext_line_ref'), ''), coalesce(e -> 'extra', '{}'));
+              pr, disc, v_vat, net, vat, net + vat, v_src, nullif(btrim(e ->> 'ext_line_ref'), ''), coalesce(e -> 'extra', '{}'), v_cat);
     end loop;
     update erp.documents x set total_net = coalesce(s.n, 0), total_vat = coalesce(s.v, 0), total_gross = coalesce(s.g, 0)
       from (select sum(l.net) n, sum(l.vat) v, sum(l.gross) g from erp.document_lines l where l.tenant_id = m.tenant_id and l.document_id = d.document_id) s

@@ -130,9 +130,25 @@ Short implementation log for Fable. The CRM's `ARCHITECT_STATE.md` is not touche
   `smoke_erp_transfers.py` (32 checks) + real DB (`smoke_erp_db.py` 22 checks: dispatch past zero, short receipt,
   ADJ_OUT posted, transfer closed, transit 0, integrity clean); owner nav checks of the other smokes now include Transfers.
 
+- Expenses lite (T19 + T20 reduced; `E180_expenses.sql`, `erp/app/40_expenses.js`): expense categories (tenant tree,
+  default VAT class, active flag, 10 defaults per tenant by trigger; RPCs `expense_category_list` / `_save`), EXP on the
+  generic core (lines carry `document_lines.expense_category_id`, new generic column of E130 accepted by
+  `doc_save_draft` / returned by `doc_line_json` / copied by `doc_copy`; net / VAT / gross per line by the core rule;
+  supplier optional; supplier's number / date, MARK, cost centre, paid on the spot + method stored only), approval limit
+  `thresholds.exp_value` (submit / approve / reject), number per branch at post, cancel with a reason (01: A M O),
+  lock date, `erp.doc_exp_validate`; report `report_expenses` (by category / supplier, dates, branch, category subtree,
+  supplier) + view `rpt_erp_expenses`. Screen "Expenses": List (keyset, state / branch / text filters, paid badge),
+  drawer = the shared document drawer (DOC_FORM.EXP), Categories admin (`expense.category.write`), Report (totals, CSV
+  download); Admin > Settings: expense approval limit. NOT built (lite): attachments, recurring templates, AP / PAY stub
+  and allocation to payments (T29), myDATA expense classification. Suite E180 (88 checks), E990 registry (3 RPCs + B
+  category ids), E150 series-defaults expectation (+EXP-A1), stub smoke `smoke_erp_expenses.py` (34), real-DB
+  `smoke_erp_db.py` +6 (28: EXP posted EXP-SER/000001 with the category's VAT, report, cancel with reason, new
+  category), owner / warehouse nav of the other smokes now include Expenses.
+
 ## Next
-- T18-lite done on `main` of the ERP repo (not live; clinics try it on a scratch / test project only). Next: the
-  expenses screens task (lite); then T17 (E170 STK) + the stocktake half of T18, then checkpoint **F3** (05: transit always zero for closed transfers, stocktake freeze, approvals). TRF on live
+- Expenses lite done on `main` (not live; clinics try it on a scratch / test project; accountant answers 92-93 before
+  real use). Live note: existing branches need Master data > Series "Create missing" once for `EXP-<branch>`.
+- T18-lite done on `main` of the ERP repo (not live; clinics try it on a scratch / test project only). Next: T17 (E170 STK) + the stocktake half of T18, then checkpoint **F3** (05: transit always zero for closed transfers, stocktake freeze, approvals). TRF on live
   only after F3 AND the accountant's answer on assumption 82 (fiscal movement document between clinics).
 - (unchanged) Live: C0 (REVIEW_F1 section 4, after the owner confirms the Auth settings), then G1, then C1
   (REVIEW_F2 section 6) and the C2 pilot (GRN / CONS / ADJ in one clinic). Checkpoint FC (T44) before T45-T47.
@@ -459,3 +475,42 @@ attacked at F1 (E991) and hold.
     The first full run had ONE failure of `smoke_erp_transfers.py` (a JS error inside a wait predicate, not reproduced
     in 9 reruns, 6 of them in parallel): the `d-msg` waits are now null-safe and the smoke turns any exception into a
     FAIL line with its message (the runner shows FAIL lines), so a recurrence names its step. [RISK: watch it.]
+91. [NEW Expenses lite] Scope: NOT built: attachments (STATE 13 still open), recurring templates, open amounts / AP, the
+    PAY stub and allocation to payments (T29). An EXP stores `extra.paid` + `payment_method` (cash / card / bank / other,
+    only when paid) and nothing else about money: an unpaid expense has no open amount anywhere until T29. No myDATA
+    expense classification (E3 characterisation) is stored; MARK is kept as text (digits) like the GRN.
+92. [NEW Expenses lite] **Accountant confirms**: the 10 default categories (RENT, UTIL, TEL, OFFICE, FEES, MAINT, MKT,
+    TRAVEL, BANK, OTHER) and their default VAT classes (RENT, BANK -> VAT0; the rest VAT24) are editable conveniences
+    only; electricity (6 %) and water (13 %) differ from the UTIL default: the user picks the class per line.
+93. [NEW Expenses lite] **Accountant confirms**: VAT of an expense line = net x rate of the chosen class, rounded per
+    line half up (the 02 core rule); there is no manual VAT override, so a supplier document whose printed VAT differs
+    by a cent needs a corrected net (RISK for exact matching with myDATA later). VAT deductibility is NOT modelled
+    (medical services are largely VAT-exempt, so input VAT is mostly not deductible): the report shows net, VAT and
+    gross paid, not deductible VAT; treat gross as the cost until the accountant says otherwise.
+94. [NEW Expenses lite] Approval limit `tenant_settings.thresholds.exp_value` compares the NET value (the core
+    `doc_value` of a priced document); no value = no approval. Admin > Settings got the field (empty = none); the
+    other threshold keys are sent back unchanged.
+95. [NEW Expenses lite] Roles (01 C1 "EXP": create A M O, approve above the limit M O, void A M O): the cancel transition
+    uses cap `create` (accounting may cancel, also an expense a manager approved); read follows the 02 "PINV" row
+    (owner, manager, accounting, warehouse r, readonly r; clinic_user none). Categories: write owner / manager /
+    accounting (02 "VAT classes" row: accounting c), deactivation without `master.archive`. [UNCERTAIN: warehouse
+    reading expense amounts; `hide_money` is not applied to EXP lists / report yet.]
+96. [NEW Expenses lite] Numbering: series per branch (`series_scope = branch`), not gapless (a received document, the
+    number is internal). `series_create_defaults` now also creates `EXP-<branch>`.
+97. [NEW Expenses lite] Generic core change, not a fork: `document_lines.expense_category_id` (column in E130, FK in
+    E180); `doc_save_draft` accepts it (tenant check `erp.require_own(.., 'expense_category', ..)`, E120; a line needs
+    an item OR a description OR a category; default VAT = the category's when the key `vat_class_id` is ABSENT, an
+    explicit null stays null), `doc_line_json` returns the id (the page names it from `expense_category_list`),
+    `doc_copy` copies it. EXP refuses item lines (stock goes through a GRN), a customer-only counterparty, a supplier
+    date after the expense date.
+98. [NEW Expenses lite] Report: posted only (cancelled out), the caller's branches, default range month-to-date,
+    grouped by the line's own category (path shown, no roll-up to the parent; the category filter includes the
+    sub-tree) or by supplier (no supplier = one row), at most 1000 rows (totals over everything). CSV is built in the
+    page (comma separated, UTF-8).
+99. [NEW Expenses lite] Screen: the branch is chosen on a new draft and fixed once saved (change = delete and
+    re-enter); the line shows VAT / gross while typing with the server's rule (display only, the saved figures come
+    from the server); choosing a category sets its default VAT class.
+100. [NEW Expenses lite] Smoke: the mock emulates EXP (limit via `mock_exp_limit`), categories and the report. The
+    "server problems" step sets `mock_fail` through an init script: a localStorage write made right before a file://
+    reload was lost in 2 of 5 runs, the likely cause of the unexplained T18 flake (STATE 90); `smoke_erp_transfers.py`
+    still uses the old pattern (not changed here). [RISK: watch it.]

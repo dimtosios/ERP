@@ -205,6 +205,41 @@ with sync_playwright() as p:
     pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
     pg.wait_for_function("document.getElementById('trf-table') && document.getElementById('trf-table').textContent.indexOf('Closed') >= 0")
     check("THE-MAIN" in pg.inner_text("#trf-table"), "transfers list: closed, destination code")
+    # expenses against the real database (T20-lite): an EXP of SER (the series came with "Create missing" above), the
+    # category's default VAT, paid by cash, posted with a number; report by category; cancel with a reason; new category
+    EQ = "from erp.documents d join erp.tenants t using (tenant_id) where t.code = 'uitest' and d.doc_type = 'EXP'"
+    cat = lambda c: psql("select category_id from erp.expense_categories e join erp.tenants t using (tenant_id) where t.code = 'uitest' and e.code = '%s';" % c)[1].strip()
+    pg.goto(html.as_uri() + "#/expenses"); pg.wait_for_selector("#exp-new")
+    pg.click("#exp-new"); pg.wait_for_selector("#doc-lines .exl")
+    pg.select_option("#d-branch", label="SER · Serres"); pg.select_option("#d-cp", label="Dental Depot"); pg.fill("#d-extno", "A-991")
+    pg.check("#d-paid"); pg.select_option("#d-pm", "cash")
+    pg.select_option("#doc-lines .exl .dl-cat", cat("UTIL")); pg.fill("#doc-lines .exl .dl-net", "10.05")
+    check(pg.locator("#doc-lines .exl .dl-vat option:checked").inner_text().startswith("VAT24") and "€2.41" in pg.inner_text("#doc-lines .exl .dl-amt"),
+          "expense: UTIL brings VAT24 (the tenant's default categories), VAT 2.41 shown before saving")
+    pg.click("#d-save"); pg.wait_for_selector("#drawer footer [data-act=doc-action][data-to=posted]")
+    check(pg.inner_text("#doc-totals") == "Net €10.05 · VAT €2.41 · gross €12.46", "expense: saved draft totals from the server")
+    pg.click("#drawer footer [data-act=doc-action][data-to=posted]")
+    pg.wait_for_function("document.getElementById('drawer') && document.getElementById('drawer').textContent.indexOf('Posted') >= 0")
+    check(psql("select d.state || '/' || d.doc_no || '/' || d.total_gross || '/' || (d.extra ->> 'payment_method') || '/' "
+               "|| (select c.name from erp.counterparties c where c.tenant_id = d.tenant_id and c.counterparty_id = d.counterparty_id) %s;" % EQ)[1].strip() == "posted/EXP-SER/000001/12.46/cash/Dental Depot",
+          "expense posted in the DB: EXP-SER/000001, gross 12.46, paid by cash, supplier")
+    pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
+    pg.click("#exp-tabs a[data-sub=report]"); pg.wait_for_selector("#exr-table")
+    check("UTIL" in pg.inner_text("#exr-table") and "€12.46" in pg.inner_text("#exr-table"), "report by category from report_expenses")
+    pg.click("#exp-tabs a[data-sub=list]"); pg.wait_for_selector("#exp-table tbody tr.click")
+    pg.click("#exp-table tbody tr.click:has-text('EXP-SER/000001')"); pg.wait_for_selector("#drawer footer [data-act=doc-action][data-to=cancelled]")
+    pg.click("#drawer footer [data-act=doc-action][data-to=cancelled]"); pg.wait_for_selector("#modal-input")
+    pg.fill("#modal-input", "entered twice"); pg.click("#modal-ok")
+    pg.wait_for_function("document.getElementById('drawer') && document.getElementById('drawer').textContent.indexOf('Cancelled') >= 0")
+    check(psql("select d.state || '/' || d.doc_no || '/' || d.cancel_reason %s;" % EQ)[1].strip() == "cancelled/EXP-SER/000001/entered twice",
+          "expense cancelled in the DB with its reason, number kept")
+    pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
+    pg.click("#exp-tabs a[data-sub=categories]"); pg.wait_for_selector("#exc-new")
+    pg.click("#exc-new"); pg.wait_for_selector("#ec-code"); pg.fill("#ec-code", "LAB"); pg.fill("#ec-name", "Dental lab"); pg.select_option("#ec-vat", label="VAT24 (24%)")
+    pg.click("#d-save"); pg.wait_for_function("document.getElementById('exc-table') && document.getElementById('exc-table').textContent.indexOf('LAB') >= 0")
+    check(psql("select e.name || '/' || v.code from erp.expense_categories e join erp.vat_classes v on v.tenant_id = e.tenant_id and v.vat_class_id = e.default_vat_class_id "
+               "join erp.tenants t on t.tenant_id = e.tenant_id where t.code = 'uitest' and e.code = 'LAB';")[1].strip() == "Dental lab/VAT24",
+          "new expense category saved in the DB with its default VAT")
     pg.context.close()
 
     pg = page(br, ANNA, "anna@ui.test")

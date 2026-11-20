@@ -250,9 +250,9 @@ begin
           'ui', m.member_id)
   returning * into d;
   insert into erp.document_lines (tenant_id, document_id, line_no, item_id, description, qty, unit_id, qty_base, unit_price, discount_pct, vat_class_id, net, vat, gross,
-                                  ext_line_ref, extra)
+                                  ext_line_ref, extra, expense_category_id)
   select m.tenant_id, d.document_id, l.line_no, l.item_id, l.description, l.qty, l.unit_id, l.qty_base, l.unit_price, l.discount_pct, l.vat_class_id, l.net, l.vat, l.gross,
-         l.ext_line_ref, l.extra
+         l.ext_line_ref, l.extra, l.expense_category_id
     from erp.document_lines l where l.tenant_id = m.tenant_id and l.document_id = p_document_id;
   update erp.documents set total_net = src.total_net, total_vat = src.total_vat, total_gross = src.total_gross where tenant_id = m.tenant_id and document_id = d.document_id;
   perform erp.audit(m.tenant_id, 'doc.copy', 'documents', d.document_id::text, null, jsonb_build_object('from', p_document_id, 'doc_type', src.doc_type), d.branch_id);

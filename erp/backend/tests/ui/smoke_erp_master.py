@@ -47,7 +47,7 @@ with sync_playwright() as p:
 
     # ---------- owner: items ----------
     pg = page(br, "owner")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Admin"], "owner nav")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Admin"], "owner nav")
     check(pg.locator("#md-tabs a").all_inner_texts() == ["Items", "Categories", "Units", "VAT classes", "Warehouses", "Customers & suppliers", "Series"], "owner: seven tabs")
     pg.wait_for_selector("#md-table")
     check(rows(pg) == 50 and pg.locator("#md-more").count() == 1, "items: first page 50 + Load more")
