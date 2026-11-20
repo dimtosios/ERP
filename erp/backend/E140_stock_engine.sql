@@ -656,6 +656,9 @@ end $$;
 
 -- the quantity effect of a document per (warehouse, item): + in / - out (service items have none)
 -- T16: a 'transfer' type (TRF dispatch) also puts the quantity into the tenant's transit warehouse
+-- Draft 2 (E210): a line whose extra carries dn_line_id (a retail receipt billing a delivery note line: a plain link,
+-- no conversion) moves NO stock: the delivery note already moved it (01 C5 "DN -> RR: NONE"). Only the RR catalogue row
+-- allows that key (doc_types.line_extra) and its validator checks the link (erp.doc_sales_validate).
 create or replace function erp.stock_effect(p_tenant uuid, p_doc uuid) returns table (warehouse_id uuid, item_id uuid, qty numeric)
 language sql stable security definer set search_path = '' as $$
   select x.warehouse_id, x.item_id, sum(x.qty) from (
@@ -663,7 +666,7 @@ language sql stable security definer set search_path = '' as $$
       from erp.documents d join erp.doc_types dt on dt.doc_type = d.doc_type
       join erp.document_lines l on l.tenant_id = d.tenant_id and l.document_id = d.document_id
       join erp.items i on i.tenant_id = l.tenant_id and i.item_id = l.item_id and i.kind <> 'service'
-     where d.tenant_id = p_tenant and d.document_id = p_doc and dt.stock_sign <> 0
+     where d.tenant_id = p_tenant and d.document_id = p_doc and dt.stock_sign <> 0 and not (l.extra ? 'dn_line_id')
     union all
     select tw.warehouse_id, l.item_id, l.qty_base
       from erp.documents d join erp.doc_types dt on dt.doc_type = d.doc_type and dt.cost_rule = 'transfer'
@@ -798,7 +801,8 @@ begin
     if tw is null then perform erp.err('ERP_VALIDATION', 'The organisation has no transit warehouse.'); end if;
   end if;
   for l in select x.*, i.kind item_kind from erp.document_lines x join erp.items i on i.tenant_id = x.tenant_id and i.item_id = x.item_id
-            where x.tenant_id = p_tenant and x.document_id = p_doc and i.kind <> 'service' order by x.line_no loop
+            where x.tenant_id = p_tenant and x.document_id = p_doc and i.kind <> 'service' and not (x.extra ? 'dn_line_id')   -- E210: billed DN line
+            order by x.line_no loop
     src := null;
     if l.source_line_id is not null and dt.cost_rule in ('source_out', 'source_in') then
       select m.move_id into src from erp.stock_moves m

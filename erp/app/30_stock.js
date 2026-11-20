@@ -14,9 +14,13 @@ var DOC_FORM = {   // type -> header fields and line columns
   CONS: {head: ['warehouse', 'date', 'cost_centre', 'ext_ref', 'notes'], lineRef: true},
   TRF: {head: ['warehouse', 'dest', 'date', 'delivery', 'notes']},   // T18 (35_transfers.js): source, destination, no price
   // T20 (40_expenses.js): no warehouse; lines = category / description / net / VAT class (expLineRow, expReadLines)
-  EXP: {head: ['branch', 'date', 'supplier', 'ext_number', 'ext_date', 'mark', 'paid', 'cost_centre', 'notes'], price: 'net', expense: true}
+  EXP: {head: ['branch', 'date', 'supplier', 'ext_number', 'ext_date', 'mark', 'paid', 'cost_centre', 'notes'], price: 'net', expense: true},
+  // Draft 2 (50_sales.js): sale lines = item / qty / price / VAT class (salLineRow, salReadLines, salPayload); non-fiscal
+  DN: {head: ['warehouse', 'date', 'customer', 'delivery_dn', 'billed', 'notes'], price: 'sale', sale: true},
+  RR: {head: ['warehouse', 'date', 'customer', 'payment', 'dn_ref', 'notes'], price: 'sale', sale: true},
+  RS: {head: ['branch', 'date', 'customer', 'payment', 'notes'], price: 'sale', sale: true, service: true}
 };
-function docCap(type, kind) { var p = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp'}[type]; return 'doc.' + p + '.' + kind; }
+function docCap(type, kind) { var p = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp', DN: 'dn', RR: 'rr', RS: 'rs'}[type]; return 'doc.' + p + '.' + kind; }
 function stockReadTypes() { return STOCK_TYPES.filter(function (x) { return can(docCap(x, 'read')); }); }
 function qtyTxt(n) { var v = Number(n); return isNaN(v) ? '' : v.toLocaleString('en-GB', {maximumFractionDigits: 4}); }
 function stateBadge(st) { return '<span class="badge ' + ({posted: 'good', draft: '', pending_approval: 'warn', cancelled: 'bad', dispatched: 'warn', received: 'good', received_with_difference: 'warn', closed: 'good'}[st] || '') + '">' + esc(t('doc.state.' + st)) + '</span>'; }
@@ -98,7 +102,7 @@ function stkCall() {
   return ['alert_list', {p_filter: {}, p_limit: 50}];
 }
 async function stkLoad(reset) {
-  if (!$('stk-body')) { if ($('trf-body')) trfLoad(true); else if ($('exp-body')) expLoad(true); return; }   // the drawer is shared with Transfers / Expenses
+  if (!$('stk-body')) { if ($('trf-body')) trfLoad(true); else if ($('exp-body')) expLoad(true); else if ($('sal-body')) salLoad(true); return; }   // the drawer is shared with Transfers / Expenses
   var my = ++STK.seq, c = stkCall(), tab = STK.tab;
   c[1].p_cursor = reset ? null : STK.next;
   var r = await api(c[0], c[1]);
@@ -189,6 +193,7 @@ ACT['stk-doc'] = async function (el) {
 };
 function docLineRow(l, i, form, ro) {
   if (form.expense) return expLineRow(l, i, ro);
+  if (form.sale) return salLineRow(l, i, form, ro);
   return '<div class="dline' + (dnLineFlag(l) ? ' dl-flag' : '') + '" data-i="' + i + '">' +
     '<div class="dl-item"><input class="dl-code" placeholder="' + esc(t('doc.f.item')) + '" value="' + esc(l.item_code || '') + '"' + (ro ? ' disabled' : '') + '>' +
     '<span class="muted dl-name">' + esc(l.item_name || '') + (l.on_hand != null ? ' · ' + esc(t('doc.on_hand', {qty: qtyTxt(l.on_hand)})) : '') + '</span></div>' +
@@ -213,6 +218,11 @@ function docHead(d, form, ro) {
     else if (f === 'branch') h += expBranchField(d, ro);
     else if (f === 'paid') h += expPaidFields(d, ro);
     else if (f === 'delivery') h += trfDeliveryFields(d, ro);
+    else if (f === 'customer') h += salCustomerField(d, ro);
+    else if (f === 'delivery_dn') h += salDeliveryFields(d, ro);
+    else if (f === 'billed') h += salBilledField(d, ro);
+    else if (f === 'payment') h += salPaymentField(d, ro);
+    else if (f === 'dn_ref') h += salDnRefField(d, ro);
     else if (f === 'date') h += field('d-date', 'doc.f.date', inp('d-date', fmtDate(d.doc_date), 'text', ro));
     else if (f === 'supplier') {   // the document's own supplier is always an option (the cached list may be older than the document)
       var sups = (STK.sups || []).map(function (c) { return [c.counterparty_id, c.name]; });
@@ -240,7 +250,8 @@ function docDrawer(d) {
   }).join('');
   drawerOpen({title: t('doc.type.' + d.doc_type) + (d.doc_no ? ' ' + d.doc_no : ''), readOnly: ro,
     extra: (d.document_id && d.state === 'draft' && d.can_edit && !sys ? '<button data-act="doc-delete">' + esc(t('doc.delete')) + '</button>' : '') +
-      (d.document_id && !sys && can(docCap(d.doc_type, 'create')) ? '<button data-act="doc-copy">' + esc(t('doc.copy')) + '</button>' : '') + acts,
+      (d.document_id && !sys && can(docCap(d.doc_type, 'create')) ? '<button data-act="doc-copy">' + esc(t('doc.copy')) + '</button>' : '') +
+      (form.sale && d.document_id ? '<button id="sal-print-btn" data-act="sal-print">' + esc(t('sal.print')) + '</button>' : '') + acts,
     body: function () {
       var probs = (d.problems || []).length ? '<ul class="problems" id="doc-problems">' + d.problems.map(function (p) {
         return '<li>' + esc((p.line_no ? t('doc.line_n', {n: p.line_no}) + ': ' : '') + p.message) + '</li>'; }).join('') + '</ul>' : '';
@@ -250,16 +261,17 @@ function docDrawer(d) {
         '<h2 style="margin-top:14px">' + esc(t('doc.lines')) + '</h2><div id="doc-lines">' + DOCD.lines.map(function (l, i) { return docLineRow(l, i, form, lro); }).join('') + '</div>' +
         (lro ? '' : '<button class="link" data-act="doc-line-add" id="doc-line-add">' + esc(t('doc.add_line')) + '</button>') +
         (d.doc_type === 'TRF' ? trfSection(d) : '') +
-        (d.document_id && form.price ? (form.expense ? expTotals(d) : '<p id="doc-totals"><b>' + esc(t('doc.total_net', {v: eur(d.total_net)})) + '</b></p>') : '') +
+        (d.document_id && form.price ? (form.expense || form.sale ? expTotals(d) : '<p id="doc-totals"><b>' + esc(t('doc.total_net', {v: eur(d.total_net)})) + '</b></p>') : '') +
         (d.total_cost != null && d.state === 'posted' ? '<p class="muted">' + esc(t('doc.total_cost', {v: eur(d.total_cost)})) + '</p>' : '') +
-        (probs ? '<div class="msg" id="doc-problem-box">' + esc(t('doc.problems')) + probs + '</div>' : '');
+        (probs ? '<div class="msg" id="doc-problem-box">' + esc(t('doc.problems')) + probs + '</div>' : '') + (form.sale ? salSection(d) : '');
     },
     mount: d.doc_type === 'GRN' ? function () { dnMount(d); } : null,
     save: ro ? null : function () { return api('doc_save_draft', {p_type: d.doc_type, p_doc: docPayload()}, {write: true, key: D.key}); },
-    onSaved: function (doc) { if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else docDrawer(doc); stkLoad(true); }});
+    onSaved: function (doc) { if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else if (DOC_FORM[doc.doc_type].sale) salOpen(doc.document_id); else docDrawer(doc); stkLoad(true); }});
 }
 function docReadLines() {
   if (DOCD.form.expense) return expReadLines();
+  if (DOCD.form.sale) return salReadLines();
   var rows = document.querySelectorAll('#doc-lines .dline');
   DOCD.lines = Array.prototype.map.call(rows, function (r, i) {
     var o = DOCD.lines[i] || {}, q = function (c) { var e = r.querySelector(c); return e ? e.value.trim() : ''; };
@@ -294,6 +306,7 @@ function docPayload() {
   if (form.head.some(function (f) { return f === 'mark' || f === 'reason' || f === 'cost_centre' || f === 'paid'; })) p.extra = extra;
   if (form.head.indexOf('delivery') >= 0) { if (Object.keys(extra.delivery || {}).length) p.extra = {delivery: extra.delivery}; else p.extra = {}; }
   if (form.expense) { p.lines = expPayloadLines(docReadLines()); return p; }
+  if (form.sale) return salPayload(p);
   p.lines = docReadLines().filter(function (l) { return l.item_id || l.qty; }).map(function (l) {
     var o = {item_id: l.item_id, qty: l.qty};
     if (l.unit_price !== undefined && l.unit_price !== '') o.unit_price = l.unit_price;
@@ -334,7 +347,7 @@ async function docSaveIfDirty() {
   if (r.ok && r.data) { D.dirty = false; D.key = uuid(); DOCD.doc = r.data; }
   return r;
 }
-function docShow(doc, msg) { drawerClose(true); if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else docDrawer(doc); if (msg) toast(msg); stkLoad(true); }
+function docShow(doc, msg) { drawerClose(true); if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else if (DOC_FORM[doc.doc_type].sale) salOpen(doc.document_id); else docDrawer(doc); if (msg) toast(msg); stkLoad(true); }
 async function docAct(to, opts) {
   var btns = document.querySelectorAll('#drawer footer button'); Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
   var s = await docSaveIfDirty();

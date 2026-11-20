@@ -173,7 +173,33 @@ Short implementation log for Fable. The CRM's `ARCHITECT_STATE.md` is not touche
   posted GRN-SER/000002, file served back). `demo.html` rebuilt by `build_demo.py` only (demo sources unchanged; the
   demo update is a later task). Not live.
 
+- Draft 2, sales lite NON-FISCAL (`E210_sales.sql`, `erp/app/50_sales.js`): DN delivery note (customer, delivery block
+  `extra.delivery {address, carrier, vehicle, reason}`, `extra.to_be_billed`, lines with sale price and VAT per line by the
+  core arithmetic, STOCK OUT at the official cost through E140 (cost rule `issue`, negative-stock warning / ack / block
+  unchanged)), RR retail receipt goods (`extra.payment_method` cash / card / bank / other; stock out only for lines
+  without a DN reference: a line billing a DN line carries `extra.dn_line_id` + header `ref_document_id` = the DN, plain
+  link, NO conversion machinery), RS services receipt (same code path, no stock). Gapless series per branch (DN-/RR-/RS-
+  <branch> from "Create missing"; a non-gapless series is a problem), states draft -> posted -> cancelled (cancel M O with
+  a reason; DN W A M O, RR A C M O, RS A M O create), `doc_types.fiscal = false` in v1 + `erp.sales_fiscal_needed` (true)
+  reported by the new RPC `sales_get` (document + issuer, branch, customer, VAT breakdown, DN billing state, RR / RS
+  collection, watermark "NOT A FISCAL DOCUMENT"). RCPT hook `erp.sales_collection`. Generic changes: E140 `stock_effect` /
+  `stock_post` skip lines with `extra.dn_line_id`; E100 `tenant_settings.issuer` (settings_save / settings_json, Admin >
+  Settings "Issuer" fields). Screen "Sales" (tabs Delivery notes, Retail receipts; keyset list, state / branch / text
+  filters, drawer = the shared DOC_FORM drawer with sale lines, quick-add customer, "Add the remaining lines of this
+  delivery note", "Print / PDF" = in-page print view + print CSS, browser Save as PDF). Suite E210 (71 checks), E990
+  registry (+1 RPC, A / B DN fixtures), E120 / E130 suites now use SINV as the "fiscal, not enabled" example, E150
+  series-defaults expectation (+DN-A1, RR-A1, RS-A1), stub smoke `smoke_erp_sales.py` (39), real-DB `smoke_erp_db.py` +6
+  (40), nav expectations of the other smokes (+Sales). `demo.html` rebuilt by `build_demo.py` only (stale otherwise; demo
+  sources unchanged: the demo shows the Sales menu without sales data). No golden case: no costing rule changed
+  (`costing_model.py` untouched). Not live.
+
 ## Next
+- Draft 2 (sales lite) done on `main`, NOT live and NOT for real sales: DN / RR / RS are fiscal documents (myDATA) and v1
+  issues them as internal documents (111). Next task: receipt of collection RCPT linked to RR / RS (and later SINV): reuse
+  `erp.sales_collection` (method / amount / branch / customer of a posted RR / RS), the payment-method values of
+  `extra.payment_method` (cash / card / bank / other, the same as EXP), the `collection.rcpt` slot of `sales_get` (null
+  today), the cancel symmetry (an RR cancel must void its RCPT), the E990 registry pattern; the post hook does not exist
+  yet: add it generically in E130 (a `doc_types` after-post / after-cancel function name, like `action_fn`), not in E210.
 - Expenses lite done on `main` (not live; clinics try it on a scratch / test project; accountant answers 92-93 before
   real use). Live note: existing branches need Master data > Series "Create missing" once for `EXP-<branch>`.
 - T18-lite done on `main` of the ERP repo (not live; clinics try it on a scratch / test project only). Next: T17 (E170 STK) + the stocktake half of T18, then checkpoint **F3** (05: transit always zero for closed transfers, stocktake freeze, approvals). TRF on live
@@ -576,6 +602,48 @@ attacked at F1 (E991) and hold.
     pop-up opened after a server call is blocked on phones) and shows photos inline. `attachment_list` / `_get` never
     return a deleted file's bytes; the audit keeps filename / size / sha256.
 
+111. [NEW Draft 2] **NON-FISCAL v1 (RISK, accountant confirms)**: DN (myDATA 9.3), RR (11.1) and RS (11.2) are fiscal
+    documents in Greece; v1 issues them as INTERNAL documents (`doc_types.fiscal = false`, local gapless numbering), every
+    drawer / print shows "NOT A FISCAL DOCUMENT", and `fiscal_needed = true` is reported by `sales_get` exactly like
+    `trf_fiscal_needed` of a TRF (82). They must not replace the legal documents on live before the provider (04 / T36);
+    the provider task sets `fiscal = true` back and moves the numbering to fiscal series.
+112. [NEW Draft 2] **Accountant confirms: VAT on delivery notes.** A DN without invoice is not a VAT event; v1 lets a DN
+    carry prices and per-line VAT (same core arithmetic) as INFORMATION only, price optional. The VAT that counts is the
+    billing document's (RR now, SINV later). Safe default: nothing reports DN VAT.
+113. [NEW Draft 2] **Accountant confirms: RR vs simplified invoice.** RR = retail receipt to a consumer (customer optional);
+    a business customer with a tax ID should get an invoice (SINV) or a simplified invoice: neither exists yet, and v1
+    does not stop an RR with a business customer. Safe default for the pilot: RR only for patients / consumers.
+114. [NEW Draft 2] RR billing a DN is a PLAIN LINK (01 C5 "DN -> RR: stock NONE"): line `extra.dn_line_id` + header
+    `ref_document_id` (one DN per receipt, same branch and customer, DN posted and to be billed, quantity <= the DN line's
+    remaining; drafts count, as 02 "remaining"). `doc_conversions` / T44 are untouched (FC pending). The DN cannot be
+    cancelled while a receipt lives (E130 `ERP_DOC_HAS_CHILDREN` through `ref_document_id`). [RISK: two receipts billing
+    the same DN line at the same moment are serialised only by the series row lock, i.e. when both use the default series
+    of the branch (the usual case); T45's conversion locks the source.]
+115. [NEW Draft 2] Cancel: DN / RR / RS posted -> cancelled by owner / manager with a reason (reversing moves). 01 C1 says
+    "provider cancel" (DN) and "by RCR" (RR / RS): both are fiscal paths that do not exist in v1. Accounting creates but
+    does not cancel; clinic_user creates RR only (01 "A C M O") and, without `doc.dn.read`, cannot bill a DN; warehouse
+    creates DN and does not read receipts (02 matrix rows "SQ, SO, DN" / "SINV ... RR, RS").
+116. [NEW Draft 2] Delivery block keys `address, carrier, vehicle, reason`; reasons sale, sale on approval, sample, repair,
+    return, other (accountant confirms the list and its later myDATA movement-purpose mapping); `to_be_billed` default
+    true (a DN "not to be billed" cannot be billed and shows that state).
+117. [NEW Draft 2] RR money: `extra.payment_method` only (collected at issue, gross = amount); no money record until the
+    RCPT task (`erp.sales_collection` is its data source, `sales_get.collection.rcpt` its slot).
+118. [NEW Draft 2] Issuer on prints: `tenant_settings.issuer` (E100 column; legal name, tax ID, tax office, address,
+    phone, email; Admin > Settings), trading name = `tenants.name`, branch name / address / establishment number from
+    `branches`, logo = `logo_url`. Print / PDF = in-page print view with print CSS (browser "Save as PDF"); no new
+    dependency, no CDN, no server-side PDF. **Real PDF generation / email (Edge Function) is a later LIVE decision
+    (L-D4).**
+119. [NEW Draft 2] RS is built (same code path: no warehouse, service items or description lines, payment method).
+120. [NEW Draft 2] E140 generic rule: a document line whose `extra` has `dn_line_id` moves no stock (`stock_effect`,
+    `stock_post`); only the RR catalogue row allows that key and its validator checks the link. Costing is unchanged
+    (no golden case, `costing_model.py` untouched).
+121. [NEW Draft 2] Sale lines: the VAT select left empty sends no `vat_class_id` (the item's class); a priced line without
+    a VAT class is a problem; no manual VAT override (as 93). Quick-add customer from the drawer: name only, kind
+    customer, needs `counterparty.write` (owner / manager / accounting); the other details in Master data.
+122. [NEW Draft 2] Tests: E120 / E130 suites used DN as the "fiscal type not enabled" example: now SINV. The stub mock
+    emulates DN / RR / RS (+ one posted DN-SER/000001 to Dental GmbH) and `sales_get`; `demo.html` was rebuilt because
+    its smoke fails on a stale file (demo sources unchanged, so the demo has the Sales menu but no sales seed).
+
 ## Open LIVE items for the owner (Draft 1; not decided here)
 - L-D1 Storage: keep files in the database (as built; 5 MB each, counts against the database size of the Supabase
   plan) or move them to a Supabase Storage bucket (private bucket, RLS on `storage.objects`, the table keeps metadata +
@@ -585,3 +653,8 @@ attacked at F1 (E991) and hold.
   The contract `delivery_note_extraction/1` is what it must return.
 - L-D3 Retention / purge of deleted files and of files of cancelled receipts (accountant: how long supplier documents
   are kept); size limit per tenant (`tenants.limits.attachments`, monthly count) if wanted.
+- L-D4 (Draft 2) Sales documents as files: a real PDF (server-side, e.g. an Edge Function) and sending it by email are
+  not built; today the browser prints / saves as PDF. Decide with the provider task (the provider usually returns the
+  legal PDF / QR) before building anything.
+- L-D5 (Draft 2) DN / RR / RS on live: not before the provider and the accountant's answers 111-113 (they are fiscal
+  documents; v1 is internal only).

@@ -158,6 +158,7 @@ ACT['branch-new'] = function () { branchDrawer({active: true}); };
 ACT['branch-open'] = function (el) { var b = ADM.branches.find(function (x) { return x.branch_id === el.getAttribute('data-id'); }); if (b) branchDrawer(b); };
 
 /* ---------- admin: settings ---------- */
+var ISSUER_KEYS = ['legal_name', 'tax_id', 'tax_office', 'address', 'phone', 'email'];
 function zones(cur) {
   var z = [];
   try { z = Intl.supportedValuesOf('timeZone'); } catch (x) { z = []; }
@@ -178,6 +179,8 @@ async function settingsLoad() {
     chk('s-hide', 'settings.f.hide_money', s.hide_money, ro) +
     field('s-explim', 'settings.f.exp_limit', inp('s-explim', (s.thresholds || {}).exp_value != null ? s.thresholds.exp_value : '', 'text', ro)) +
     field('s-logo', 'settings.f.logo_url', inp('s-logo', s.logo_url, 'url', ro)) +
+    '<h2 style="margin-top:14px">' + esc(t('settings.issuer')) + '</h2>' + ISSUER_KEYS.map(function (k) {   // Draft 2: printed on sales documents
+      return field('s-iss-' + k, 'settings.f.issuer_' + k, inp('s-iss-' + k, (s.issuer || {})[k], 'text', ro)); }).join('') +
     '<div class="msg bad" id="s-msg"></div>' +
     (ro ? '' : '<div class="row end"><button type="submit" class="primary" id="s-save">' + esc(t('settings.save')) + '</button></div>') + '</form></div>');
 }
@@ -191,6 +194,9 @@ FORM.settings = async function () {
   if (lock !== (s.lock_date || null)) p.lock_date = lock;
   if ($('s-hide').checked !== !!s.hide_money) p.hide_money = $('s-hide').checked;
   var logo = val('s-logo').trim() || null; if (logo !== (s.logo_url || null)) p.logo_url = logo;
+  var iss = {}, issOld = s.issuer || {};
+  ISSUER_KEYS.forEach(function (k) { var v = val('s-iss-' + k).trim(); if (v) iss[k] = k === 'tax_id' ? v.toUpperCase().replace(/\s+/g, '') : v; });
+  if (JSON.stringify(iss) !== JSON.stringify(ISSUER_KEYS.reduce(function (o, k) { if (issOld[k]) o[k] = issOld[k]; return o; }, {}))) p.issuer = iss;
   var limTxt = val('s-explim').trim().replace(',', '.'), lim = limTxt === '' ? null : Number(limTxt), thr = Object.assign({}, s.thresholds || {});
   if (limTxt !== '' && (isNaN(lim) || lim < 0)) { msg.textContent = t('save.not_saved', {reason: t('settings.exp_limit_invalid')}); return; }
   if (lim !== (thr.exp_value != null ? Number(thr.exp_value) : null)) { if (lim === null) delete thr.exp_value; else thr.exp_value = lim; p.thresholds = thr; }

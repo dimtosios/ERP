@@ -96,6 +96,34 @@ tr.click{cursor:pointer} tr.click:hover{background:var(--surface2)}
 .dline .dl-dn{flex:1 1 100%;font-size:12px}
 @media (max-width:600px){.top{padding:8px 12px}.main{padding:12px}
   .dline input.dl-qty,.dline input.dl-price,.dline input.dl-disc{width:calc(33% - 6px)}}
+/* Draft 2: sales lines and the print view (browser Print -> Save as PDF); NOT A FISCAL DOCUMENT on every view */
+.dline.sll .dl-amt{min-width:200px}
+.print-view{position:fixed;inset:0;z-index:60;overflow:auto;background:var(--surface2);padding:12px}
+.print-view .pv-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:820px;margin:0 auto 10px}
+.pv-page{position:relative;max-width:820px;margin:0 auto;background:#fff;color:#000;padding:28px;border:1px solid #ccc;overflow:hidden;font-size:13px}
+.pv-page h1{font-size:20px;margin:0 0 4px}
+.pv-wm{position:absolute;top:40%;left:-10%;width:120%;text-align:center;transform:rotate(-30deg);font-size:64px;font-weight:700;color:rgba(200,0,0,.12);pointer-events:none;white-space:nowrap}
+.pv-banner{border:2px solid #b00;color:#b00;font-weight:700;text-align:center;padding:4px;margin:0 0 12px;letter-spacing:.05em}
+.pv-head{display:flex;justify-content:space-between;gap:16px;margin-bottom:12px}
+.pv-title{text-align:right}
+.pv-logo{max-height:48px;display:block;margin-bottom:4px}
+.pv-boxes{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.pv-box{flex:1 1 240px;border:1px solid #999;padding:8px;border-radius:4px}
+.pv-page table{width:100%;border-collapse:collapse;margin-bottom:10px}
+.pv-page th,.pv-page td{border-bottom:1px solid #bbb;padding:4px;text-align:left;color:#000;background:none}
+.pv-page .num{text-align:right;white-space:nowrap}
+.pv-foot{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.pv-vat{flex:1 1 300px;width:auto!important}
+.pv-total{flex:1 1 200px;text-align:right;font-weight:700;font-size:15px}
+.pv-note{font-size:11px;color:#555;margin-top:16px}
+@media print{
+  body.printing>*:not(#print-view){display:none!important}
+  .print-view{position:static;padding:0;background:#fff;overflow:visible}
+  .print-view .pv-bar{display:none}
+  .pv-page{border:0;max-width:none;padding:0}
+  .pv-wm{position:fixed;top:45%}
+  @page{margin:14mm}
+}
 </style>
 </head><body>
 <div id="app"></div>
@@ -527,6 +555,12 @@ window.__ERP_DEMO_SEED = {"_about":"iSmile ERP demo seed: the ONE source of trut
     clinic_user: ['cons.read', 'cons.create'],
     readonly: ['opn.read', 'grn.read', 'adj.read', 'cons.read', 'trf.read', 'exp.read']
   };
+  // E210 (Draft 2): DN W A M O / cancel M O; RR A C M O / cancel M O; RS A M O / cancel M O; readonly reads
+  var SALECAPS = {owner: ['dn.read', 'dn.create', 'dn.approve', 'rr.read', 'rr.create', 'rr.approve', 'rs.read', 'rs.create', 'rs.approve'],
+                  manager: ['dn.read', 'dn.create', 'dn.approve', 'rr.read', 'rr.create', 'rr.approve', 'rs.read', 'rs.create', 'rs.approve'],
+                  warehouse: ['dn.read', 'dn.create'], accounting: ['dn.read', 'dn.create', 'rr.read', 'rr.create', 'rs.read', 'rs.create'],
+                  clinic_user: ['rr.read', 'rr.create'], readonly: ['dn.read', 'rr.read', 'rs.read']};
+  Object.keys(DOCCAPS).forEach(function (r) { DOCCAPS[r] = DOCCAPS[r].concat(SALECAPS[r]); });
   Object.keys(CAPS).forEach(function (r) { CAPS[r] = CAPS[r].concat(DOCCAPS[r].map(function (c) { return 'doc.' + c; }), ['stock.read']); });
   ['owner', 'manager', 'accounting'].forEach(function (r) { CAPS[r].push('expense.category.write'); });   // E180 (T19)
   var BR = [
@@ -601,7 +635,46 @@ window.__ERP_DEMO_SEED = {"_about":"iSmile ERP demo seed: the ONE source of trut
     return o;
   }
   var ITEMBY = {'IT-001': {item_id: 'i1', name: 'Bracket 1'}, 'IT-002': {item_id: 'i2', name: 'Wire 2'}, 'IT-003': {item_id: 'i3', name: 'Elastic 3'}, '4006381333931': {item_id: 'i3', name: 'Elastic 3', code: 'IT-003'}};
-  var DCAP = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp'};
+  var DCAP = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp', DN: 'dn', RR: 'rr', RS: 'rs'};
+  var SALES = ['DN', 'RR', 'RS'];
+  // E210: one posted delivery note of SER to Dental GmbH (to be billed): 3 x IT-001 at 20.00 + 24 %
+  DOCS.push({document_id: 'sd1', doc_type: 'DN', state: 'posted', branch_id: 'b1', branch_code: 'SER', warehouse_id: 'w1', warehouse_code: 'SER-MAIN', counterparty_id: 'p2',
+             counterparty_name: 'Dental GmbH', doc_no: 'DN-SER/000001', doc_date: '2026-11-17', version: 2, extra: {delivery: {reason: 'sale', vehicle: 'ABC-1234'}, to_be_billed: true},
+             total_net: '60.00', total_vat: '14.40', total_gross: '74.40',
+             lines: [{line_id: 'sd1-0', line_no: 1, item_id: 'i1', item_code: 'IT-001', item_name: 'Bracket 1', qty: '3.0000', qty_base: '3.0000', unit_price: '20.0000', vat_class_id: 'v1',
+                      net: '60.00', vat: '14.40', gross: '74.40', extra: {}}]});
+  function dnBilled(lineId, posted) {
+    return DOCS.filter(function (x) { return x.doc_type === 'RR' && x.state !== 'cancelled' && (!posted || x.state === 'posted'); }).reduce(function (s, x) {
+      return s + (x.lines || []).filter(function (l) { return (l.extra || {}).dn_line_id === lineId; }).reduce(function (a, l) { return a + Number(l.qty); }, 0); }, 0);
+  }
+  function salesOut(d) {
+    var o = docOut(d), c = CPS.find(function (x) { return x.counterparty_id === d.counterparty_id; }), b = BR.find(function (x) { return x.branch_id === d.branch_id; }) || {};
+    var w = WHS.find(function (x) { return x.warehouse_id === d.warehouse_id; }), vb = {};
+    (d.lines || []).forEach(function (l) {
+      var v = VATS.find(function (x) { return x.vat_class_id === l.vat_class_id; }) || {}, k = l.vat_class_id || '-';
+      vb[k] = vb[k] || {vat_class_id: l.vat_class_id || null, code: v.code || null, rate: v.rate || null, net: 0, vat: 0, gross: 0};
+      vb[k].net += Number(l.net || 0); vb[k].vat += Number(l.vat || 0); vb[k].gross += Number(l.gross || l.net || 0);
+    });
+    var sales = {fiscal: false, fiscal_needed: true, watermark: 'NOT A FISCAL DOCUMENT', issuer: Object.assign({name: 'iSmile', logo_url: SET.logo_url}, SET.issuer || {}),
+                 branch: {code: b.code, name: b.name, address: b.address, establishment_no: b.establishment_no}, warehouse: w ? {code: w.code, name: w.name} : null,
+                 customer: c ? {name: c.name, code: c.code, tax_id: c.tax_id, country: c.country, city: c.city} : null,
+                 vat_breakdown: Object.keys(vb).map(function (k) { var x = vb[k]; x.net = x.net.toFixed(2); x.vat = x.vat.toFixed(2); x.gross = x.gross.toFixed(2); return x; })};
+    if (d.doc_type === 'DN') {
+      var tbb = (d.extra || {}).to_be_billed !== false, lines = (d.lines || []).map(function (l) {
+        var bp = dnBilled(l.line_id, true), ba = dnBilled(l.line_id, false);
+        return {line_id: l.line_id, qty: l.qty, billed: String(bp), in_drafts: String(ba - bp), remaining: String(Number(l.qty) - ba)}; });
+      var tot = lines.reduce(function (s, x) { return s + Number(x.billed); }, 0);
+      sales.billing = {to_be_billed: tbb, status: !tbb ? 'not_to_be_billed' : tot === 0 ? 'open' : lines.every(function (x) { return Number(x.billed) >= Number(x.qty); }) ? 'full' : 'partial',
+                       lines: lines, receipts: DOCS.filter(function (x) { return x.doc_type === 'RR' && x.ref_document_id === d.document_id; }).map(function (x) {
+                         return {document_id: x.document_id, doc_type: 'RR', doc_no: x.doc_no, state: x.state}; })};
+    } else {
+      sales.collection = {payment_method: (d.extra || {}).payment_method || null, amount: d.total_gross, rcpt: null};
+      var dn = d.ref_document_id && DOCS.find(function (x) { return x.document_id === d.ref_document_id; });
+      if (d.doc_type === 'RR') sales.dn = dn ? {document_id: dn.document_id, doc_no: dn.doc_no} : null;
+    }
+    o.sales = sales;
+    return o;
+  }
   // E180 (T19 / T20): expense categories and expenses. e1 posted in SER (paid by card), e2 posted in THE (owner only)
   var EXPCATS = [{category_id: 'ec1', parent_id: null, code: 'RENT', name: 'Rent', path: 'RENT', default_vat_class_id: 'v0', vat_code: 'VAT0', vat_rate: '0.00', active: true},
                  {category_id: 'ec2', parent_id: null, code: 'UTIL', name: 'Utilities', path: 'UTIL', default_vat_class_id: 'v1', vat_code: 'VAT24', vat_rate: '24.00', active: true},
@@ -645,7 +718,13 @@ window.__ERP_DEMO_SEED = {"_about":"iSmile ERP demo seed: the ONE source of trut
     o.problems = d.state !== 'draft' ? [] : d.doc_type === 'EXP'
       ? (d.lines || []).filter(function (l) { return !l.expense_category_id || !l.vat_class_id; }).map(function (l) { return {code: 'required', field: l.expense_category_id ? 'vat_class_id' : 'expense_category_id', line_no: l.line_no,
           message: l.expense_category_id ? 'Choose the VAT class.' : 'Choose the expense category.'}; })
-      : (d.lines || []).filter(function (l) { return !l.item_id; }).map(function (l) { return {code: 'required', field: 'item_id', line_no: l.line_no, message: 'Item is required.'}; });
+      : (d.lines || []).filter(function (l) { return !l.item_id && !(d.doc_type === 'RS' && l.description); }).map(function (l) { return {code: 'required', field: 'item_id', line_no: l.line_no, message: 'Item is required.'}; });
+    if (d.state === 'draft' && SALES.indexOf(d.doc_type) >= 0) {   // E210 (doc_sales_validate, the common cases)
+      if (d.doc_type === 'DN' && !d.counterparty_id) o.problems.push({code: 'required', field: 'counterparty_id', message: 'Counterparty is required.'});
+      if (d.doc_type === 'DN' && !((d.extra || {}).delivery || {}).reason) o.problems.push({code: 'required', field: 'extra.delivery.reason', message: 'Delivery: the reason of the movement is required.'});
+      if (d.doc_type !== 'DN' && !(d.extra || {}).payment_method) o.problems.push({code: 'required', field: 'extra.payment_method', message: 'Choose how it was paid.'});
+      if (d.doc_type !== 'DN') (d.lines || []).forEach(function (l) { if (l.unit_price == null || l.unit_price === '') o.problems.push({code: 'required', field: 'unit_price', line_no: l.line_no, message: 'The price is required.'}); });
+    }
     if (d.state === 'draft' && d.doc_type === 'GRN') (d.lines || []).forEach(function (l) {   // Draft 1 (E190 grn_dn_validate)
       var x = (l.extra || {}).dn; if (!x) return;
       if (x.status === 'unmatched' && !l.item_id) o.problems.push({code: 'not_matched', field: 'item_id', line_no: l.line_no, message: 'Item not matched: "' + (x.description || x.supplier_code || x.barcode || '?') + '". Choose the item.'});
@@ -675,7 +754,7 @@ window.__ERP_DEMO_SEED = {"_about":"iSmile ERP demo seed: the ONE source of trut
     if (!errs.length && !a.p_dry_run) rows.forEach(add);
     return {data: {dry_run: !!a.p_dry_run || errs.length > 0, rows: rows.length, created: rows.length, updated: 0, errors: errs}, error: null};
   }
-  var SET = {time_zone: 'Europe/Athens', negative_stock: 'warn', valuation_method: 'average', lock_date: null, hide_money: false, logo_url: null, version: 1,
+  var SET = {time_zone: 'Europe/Athens', negative_stock: 'warn', valuation_method: 'average', lock_date: null, hide_money: false, logo_url: null, version: 1, issuer: {},
              thresholds: ls('mock_exp_limit') ? {exp_value: Number(ls('mock_exp_limit'))} : {}};   // mock_exp_limit: thresholds.exp_value at load
   var IDEM = {};
   var ATT = [];   // Draft 1 (E190) attachments, with their base64 content
@@ -717,7 +796,7 @@ window.__ERP_DEMO_SEED = {"_about":"iSmile ERP demo seed: the ONE source of trut
       if (!can('tenant.settings.write')) return err('ERP_FORBIDDEN', 'no');
       var p = a.p_settings || {};
       if (p.version !== SET.version) return err('ERP_CONFLICT', 'version');
-      ['time_zone', 'negative_stock', 'lock_date', 'hide_money', 'logo_url', 'thresholds'].forEach(function (k) { if (k in p) SET[k] = p[k]; });
+      ['time_zone', 'negative_stock', 'lock_date', 'hide_money', 'logo_url', 'thresholds', 'issuer'].forEach(function (k) { if (k in p) SET[k] = p[k]; });
       SET.version++; return {data: Object.assign({}, SET), error: null};
     },
     member_list: function (a) {
@@ -802,10 +881,16 @@ window.__ERP_DEMO_SEED = {"_about":"iSmile ERP demo seed: the ONE source of trut
       var f = a.p_filter || {}, types = f.doc_type ? [f.doc_type] : (f.doc_types || []);
       types = types.filter(function (x) { return can('doc.' + DCAP[x] + '.read'); });
       if (!types.length) return err('ERP_FORBIDDEN', 'no');
-      var rows = DOCS.filter(function (d) { return types.indexOf(d.doc_type) >= 0 && (!f.state || d.state === f.state) && (d.doc_type !== 'TRF' || trfVisible(d)) && (d.doc_type !== 'EXP' || mine(d.branch_id))
+      var rows = DOCS.filter(function (d) { return types.indexOf(d.doc_type) >= 0 && (!f.state || d.state === f.state) && (d.doc_type !== 'TRF' || trfVisible(d)) && ((d.doc_type !== 'EXP' && SALES.indexOf(d.doc_type) < 0) || mine(d.branch_id))
           && (!f.branch_id || d.branch_id === f.branch_id || (d.doc_type === 'TRF' && whBranch(d.dest_warehouse_id) === f.branch_id)); })
         .map(function (d) { var o = docOut(d); delete o.lines; return o; });
       return {data: page(rows, a, function (r) { return r.document_id; }), error: null};
+    },
+    sales_get: function (a) {
+      var d = DOCS.find(function (x) { return x.document_id === a.p_document_id; }); if (!d) return err('ERP_TENANT', 'not yours');
+      if (SALES.indexOf(d.doc_type) < 0) return err('ERP_VALIDATION', '1 problem', [{code: 'invalid', field: 'p_document_id', message: d.doc_type + ' is not a sales document.'}]);
+      if (!can('doc.' + DCAP[d.doc_type] + '.read') || !mine(d.branch_id)) return err('ERP_FORBIDDEN', 'no');
+      return {data: salesOut(d), error: null};
     },
     doc_get: function (a) { var d = DOCS.find(function (x) { return x.document_id === a.p_document_id; }); if (!d) return err('ERP_TENANT', 'not yours'); return {data: docOut(d), error: null}; },
     doc_save_draft: function (a) {
@@ -820,7 +905,8 @@ window.__ERP_DEMO_SEED = {"_about":"iSmile ERP demo seed: the ONE source of trut
         var net = l.unit_price != null ? (Math.round(Number(l.qty) * Number(l.unit_price) * (1 - Number(l.discount_pct || 0) / 100) * 100) / 100).toFixed(2) : '0.00';
         return Object.assign({line_id: d.document_id + '-' + i, line_no: i + 1, item_code: code || '', item_name: code ? ITEMBY[code].name : '', qty_base: l.qty, net: net}, l);
       });
-      if (d.doc_type === 'EXP') (d.lines || []).forEach(function (l) {
+      if (SALES.indexOf(d.doc_type) >= 0) (d.lines || []).forEach(function (l) { if (!('vat_class_id' in l) && l.item_id) l.vat_class_id = 'v1'; });   // the item's class
+      if (d.doc_type === 'EXP' || SALES.indexOf(d.doc_type) >= 0) (d.lines || []).forEach(function (l) {
         var v = VATS.find(function (x) { return x.vat_class_id === l.vat_class_id; }), vat = v ? Math.round(Number(l.net) * Number(v.rate)) / 100 : 0;
         l.vat = vat.toFixed(2); l.gross = (Number(l.net) + vat).toFixed(2);
       });
@@ -869,12 +955,16 @@ window.__ERP_DEMO_SEED = {"_about":"iSmile ERP demo seed: the ONE source of trut
       }
       if (a.p_to_state === 'cancelled' && !o.reason) return err('ERP_VALIDATION', '1 problem', [{code: 'required', field: 'reason', message: 'A reason is required.'}]);
       if (a.p_to_state === 'posted' && d.doc_type === 'GRN' && docOut(d).problems.length) return err('ERP_VALIDATION', docOut(d).problems.length + ' problem(s)', docOut(d).problems);
+      if (a.p_to_state === 'cancelled' && d.doc_type === 'DN' && DOCS.some(function (x) { return x.ref_document_id === d.document_id && x.state === 'posted'; }))
+        return err('ERP_DOC_HAS_CHILDREN', 'Document ' + d.doc_no + ' has later documents that depend on it: cancel them first.');
+      if (a.p_to_state === 'posted' && SALES.indexOf(d.doc_type) >= 0 && docOut(d).problems.length) return err('ERP_VALIDATION', docOut(d).problems.length + ' problem(s)', docOut(d).problems);
       if (a.p_to_state === 'posted') {
-        var sign = d.doc_type === 'CONS' || d.doc_type === 'ADJ_OUT' ? -1 : 1;
-        var warn = (d.lines || []).filter(function (l) { return sign < 0 && d.warehouse_id !== 'wt' && (STOCKQ[l.item_id] || 0) - Number(l.qty) < 0; })
+        var sign = d.doc_type === 'CONS' || d.doc_type === 'ADJ_OUT' || d.doc_type === 'DN' || d.doc_type === 'RR' ? -1 : d.doc_type === 'RS' ? 0 : 1;
+        var stockLines = (d.lines || []).filter(function (l) { return !(l.extra || {}).dn_line_id; });   // E210: a billed DN line moved no stock
+        var warn = stockLines.filter(function (l) { return sign < 0 && d.warehouse_id !== 'wt' && (STOCKQ[l.item_id] || 0) - Number(l.qty) < 0; })
           .map(function (l) { return {code: 'W_STOCK_NEGATIVE', item_id: l.item_id, item_code: l.item_code, warehouse_id: d.warehouse_id, warehouse_code: d.warehouse_code, qty_after: String((STOCKQ[l.item_id] || 0) - Number(l.qty))}; });
         if (warn.length && !o.ack_warnings) return {data: {posted: false, warnings: warn, document: docOut(d)}, error: null};
-        if (d.warehouse_id !== 'wt') (d.lines || []).forEach(function (l) { STOCKQ[l.item_id] = (STOCKQ[l.item_id] || 0) + sign * Number(l.qty); });
+        if (d.warehouse_id !== 'wt') stockLines.forEach(function (l) { STOCKQ[l.item_id] = (STOCKQ[l.item_id] || 0) + sign * Number(l.qty); });
         d.state = 'posted'; d.doc_no = d.doc_type + '-SER/' + String(NEXTID++).padStart(6, '0'); d.version++;
         var parent = d.ref_document_id && DOCS.find(function (z) { return z.document_id === d.ref_document_id && z.doc_type === 'TRF'; });
         if (parent && TRFX[parent.document_id].adj.every(function (id) { return DOCS.find(function (z) { return z.document_id === id; }).state === 'posted'; })) {
@@ -1110,6 +1200,7 @@ var STR = {
   'nav.stock': 'Stock',
   'nav.transfers': 'Transfers',
   'nav.expenses': 'Expenses',
+  'nav.sales': 'Sales',
 
   'home.title': 'Welcome',
   'home.lead': '{tenant}: signed in as {email} ({role}).',
@@ -1201,6 +1292,13 @@ var STR = {
   'settings.f.exp_limit': 'Expense approval limit (net €; empty = no approval needed)',
   'settings.exp_limit_invalid': 'the expense approval limit must be a number of 0 or more.',
   'settings.f.logo_url': 'Logo URL (https)',
+  'settings.issuer': 'Issuer (printed on sales documents)',
+  'settings.f.issuer_legal_name': 'Legal name',
+  'settings.f.issuer_tax_id': 'Tax ID (AFM)',
+  'settings.f.issuer_tax_office': 'Tax office (DOY)',
+  'settings.f.issuer_address': 'Address',
+  'settings.f.issuer_phone': 'Phone',
+  'settings.f.issuer_email': 'Email',
   'settings.save': 'Save settings',
   'settings.read_only': 'Only the owner can change the settings.',
   'settings.lock_invalid': 'the lock date must be a real date as dd/mm/yyyy.',
@@ -1368,6 +1466,9 @@ var STR = {
   'doc.type.CONS': 'Consumption',
   'doc.type.TRF': 'Transfer',
   'doc.type.EXP': 'Expense',
+  'doc.type.DN': 'Delivery note',
+  'doc.type.RR': 'Retail receipt',
+  'doc.type.RS': 'Services receipt',
   'doc.state.draft': 'Draft',
   'doc.state.pending_approval': 'Waiting for approval',
   'doc.state.posted': 'Posted',
@@ -1589,7 +1690,79 @@ var STR = {
   'err.ERP_TIMEOUT': 'The server did not answer in time. Try again.',
   'err.ERP_NETWORK': 'No connection to the server.',
   'err.ERP_RPC_MISSING': 'The server does not offer this function yet.',
-  'err.unknown': 'Unknown error.'
+  'err.unknown': 'Unknown error.',
+  // Draft 2: sales (non-fiscal delivery notes and retail receipts)
+  'sal.title': 'Sales',
+  'sal.nonfiscal_note': 'Version 1: delivery notes and receipts are internal documents, NOT fiscal documents (no myDATA). Fiscal issuing comes with the provider.',
+  'sal.tab.dn': 'Delivery notes',
+  'sal.tab.rr': 'Retail receipts',
+  'sal.search': 'Number or notes',
+  'sal.new_dn': 'New delivery note',
+  'sal.new_rr': 'New retail receipt',
+  'sal.new_rs': 'New services receipt',
+  'sal.col.type': 'Type',
+  'sal.col.customer': 'Customer',
+  'sal.col.billing': 'Billing',
+  'sal.col.method': 'Paid by',
+  'sal.short.RR': 'Goods',
+  'sal.short.RS': 'Services',
+  'sal.empty_dn': 'No delivery notes.',
+  'sal.empty_rr': 'No retail receipts.',
+  'sal.to_bill': 'To be billed',
+  'sal.not_billed': 'Not to be billed',
+  'sal.f.customer': 'Customer',
+  'sal.f.customer_opt': 'Customer (optional)',
+  'sal.no_customer': 'No customer (retail)',
+  'sal.cust_new': '+ New customer',
+  'sal.cust_new_q': 'New customer: name (the other details can be completed in Master data).',
+  'sal.cust_add': 'Add customer',
+  'sal.cust_added': 'Customer {name} added.',
+  'sal.f.reason': 'Reason of the movement',
+  'sal.reason.sale': 'Sale',
+  'sal.reason.sale_on_approval': 'Sale on approval',
+  'sal.reason.sample': 'Sample',
+  'sal.reason.repair': 'Repair',
+  'sal.reason.return': 'Return',
+  'sal.reason.other': 'Other',
+  'sal.f.address': 'Delivery address',
+  'sal.f.to_be_billed': 'To be billed (an invoice / receipt follows)',
+  'sal.f.method': 'Payment method',
+  'sal.f.dn': 'Delivery note billed (optional)',
+  'sal.no_dn': 'No delivery note',
+  'sal.dn_lines': 'Add the remaining lines of this delivery note',
+  'sal.choose_dn': 'Choose the delivery note first.',
+  'sal.dn_nothing_left': 'Nothing is left to bill on this delivery note.',
+  'sal.from_dn': 'From delivery note {no}: no stock movement (the delivery note moved it)',
+  'sal.f.description': 'Description',
+  'sal.f.price': 'Price',
+  'sal.vat_item': "Item's VAT",
+  'sal.line_amt': 'Net {net} · VAT {vat} · gross {gross}',
+  'sal.watermark': 'NOT A FISCAL DOCUMENT',
+  'sal.fiscal_note': 'Internal document of version 1, not sent to myDATA; the fiscal document is issued later through the provider.',
+  'sal.billing.open': 'Not billed yet.',
+  'sal.billing.partial': 'Partly billed.',
+  'sal.billing.full': 'Fully billed.',
+  'sal.billing.not_to_be_billed': 'Not to be billed.',
+  'sal.collected': 'Collected at issue: {m}, {v}.',
+  'sal.print': 'Print / PDF',
+  'sal.print_btn': 'Print or save as PDF',
+  'sal.print_hint': 'In the print dialog choose "Save as PDF" to keep a file.',
+  'sal.print_save_first': 'Save the changes before printing.',
+  'sal.p.tax_id': 'Tax ID',
+  'sal.p.branch': 'Branch {code} · {name}',
+  'sal.p.estab': 'establishment {n}',
+  'sal.p.draft': 'DRAFT (no number)',
+  'sal.p.customer': 'Customer',
+  'sal.p.delivery': 'Delivery',
+  'sal.p.from': 'From {wh}',
+  'sal.p.carrier': 'Carrier',
+  'sal.p.vehicle': 'Vehicle',
+  'sal.p.dn': 'Bills delivery note {no}',
+  'sal.p.code': 'Code',
+  'sal.p.desc': 'Description',
+  'sal.p.disc': 'Disc.',
+  'sal.p.vat_pct': 'VAT %',
+  'sal.p.cancelled': 'CANCELLED: {r}'
 };
 /* ===== 00_core.js ===== */
 /* ---------- config ---------- */
@@ -2251,9 +2424,13 @@ var DOC_FORM = {   // type -> header fields and line columns
   CONS: {head: ['warehouse', 'date', 'cost_centre', 'ext_ref', 'notes'], lineRef: true},
   TRF: {head: ['warehouse', 'dest', 'date', 'delivery', 'notes']},   // T18 (35_transfers.js): source, destination, no price
   // T20 (40_expenses.js): no warehouse; lines = category / description / net / VAT class (expLineRow, expReadLines)
-  EXP: {head: ['branch', 'date', 'supplier', 'ext_number', 'ext_date', 'mark', 'paid', 'cost_centre', 'notes'], price: 'net', expense: true}
+  EXP: {head: ['branch', 'date', 'supplier', 'ext_number', 'ext_date', 'mark', 'paid', 'cost_centre', 'notes'], price: 'net', expense: true},
+  // Draft 2 (50_sales.js): sale lines = item / qty / price / VAT class (salLineRow, salReadLines, salPayload); non-fiscal
+  DN: {head: ['warehouse', 'date', 'customer', 'delivery_dn', 'billed', 'notes'], price: 'sale', sale: true},
+  RR: {head: ['warehouse', 'date', 'customer', 'payment', 'dn_ref', 'notes'], price: 'sale', sale: true},
+  RS: {head: ['branch', 'date', 'customer', 'payment', 'notes'], price: 'sale', sale: true, service: true}
 };
-function docCap(type, kind) { var p = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp'}[type]; return 'doc.' + p + '.' + kind; }
+function docCap(type, kind) { var p = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp', DN: 'dn', RR: 'rr', RS: 'rs'}[type]; return 'doc.' + p + '.' + kind; }
 function stockReadTypes() { return STOCK_TYPES.filter(function (x) { return can(docCap(x, 'read')); }); }
 function qtyTxt(n) { var v = Number(n); return isNaN(v) ? '' : v.toLocaleString('en-GB', {maximumFractionDigits: 4}); }
 function stateBadge(st) { return '<span class="badge ' + ({posted: 'good', draft: '', pending_approval: 'warn', cancelled: 'bad', dispatched: 'warn', received: 'good', received_with_difference: 'warn', closed: 'good'}[st] || '') + '">' + esc(t('doc.state.' + st)) + '</span>'; }
@@ -2335,7 +2512,7 @@ function stkCall() {
   return ['alert_list', {p_filter: {}, p_limit: 50}];
 }
 async function stkLoad(reset) {
-  if (!$('stk-body')) { if ($('trf-body')) trfLoad(true); else if ($('exp-body')) expLoad(true); return; }   // the drawer is shared with Transfers / Expenses
+  if (!$('stk-body')) { if ($('trf-body')) trfLoad(true); else if ($('exp-body')) expLoad(true); else if ($('sal-body')) salLoad(true); return; }   // the drawer is shared with Transfers / Expenses
   var my = ++STK.seq, c = stkCall(), tab = STK.tab;
   c[1].p_cursor = reset ? null : STK.next;
   var r = await api(c[0], c[1]);
@@ -2426,6 +2603,7 @@ ACT['stk-doc'] = async function (el) {
 };
 function docLineRow(l, i, form, ro) {
   if (form.expense) return expLineRow(l, i, ro);
+  if (form.sale) return salLineRow(l, i, form, ro);
   return '<div class="dline' + (dnLineFlag(l) ? ' dl-flag' : '') + '" data-i="' + i + '">' +
     '<div class="dl-item"><input class="dl-code" placeholder="' + esc(t('doc.f.item')) + '" value="' + esc(l.item_code || '') + '"' + (ro ? ' disabled' : '') + '>' +
     '<span class="muted dl-name">' + esc(l.item_name || '') + (l.on_hand != null ? ' · ' + esc(t('doc.on_hand', {qty: qtyTxt(l.on_hand)})) : '') + '</span></div>' +
@@ -2450,6 +2628,11 @@ function docHead(d, form, ro) {
     else if (f === 'branch') h += expBranchField(d, ro);
     else if (f === 'paid') h += expPaidFields(d, ro);
     else if (f === 'delivery') h += trfDeliveryFields(d, ro);
+    else if (f === 'customer') h += salCustomerField(d, ro);
+    else if (f === 'delivery_dn') h += salDeliveryFields(d, ro);
+    else if (f === 'billed') h += salBilledField(d, ro);
+    else if (f === 'payment') h += salPaymentField(d, ro);
+    else if (f === 'dn_ref') h += salDnRefField(d, ro);
     else if (f === 'date') h += field('d-date', 'doc.f.date', inp('d-date', fmtDate(d.doc_date), 'text', ro));
     else if (f === 'supplier') {   // the document's own supplier is always an option (the cached list may be older than the document)
       var sups = (STK.sups || []).map(function (c) { return [c.counterparty_id, c.name]; });
@@ -2477,7 +2660,8 @@ function docDrawer(d) {
   }).join('');
   drawerOpen({title: t('doc.type.' + d.doc_type) + (d.doc_no ? ' ' + d.doc_no : ''), readOnly: ro,
     extra: (d.document_id && d.state === 'draft' && d.can_edit && !sys ? '<button data-act="doc-delete">' + esc(t('doc.delete')) + '</button>' : '') +
-      (d.document_id && !sys && can(docCap(d.doc_type, 'create')) ? '<button data-act="doc-copy">' + esc(t('doc.copy')) + '</button>' : '') + acts,
+      (d.document_id && !sys && can(docCap(d.doc_type, 'create')) ? '<button data-act="doc-copy">' + esc(t('doc.copy')) + '</button>' : '') +
+      (form.sale && d.document_id ? '<button id="sal-print-btn" data-act="sal-print">' + esc(t('sal.print')) + '</button>' : '') + acts,
     body: function () {
       var probs = (d.problems || []).length ? '<ul class="problems" id="doc-problems">' + d.problems.map(function (p) {
         return '<li>' + esc((p.line_no ? t('doc.line_n', {n: p.line_no}) + ': ' : '') + p.message) + '</li>'; }).join('') + '</ul>' : '';
@@ -2487,16 +2671,17 @@ function docDrawer(d) {
         '<h2 style="margin-top:14px">' + esc(t('doc.lines')) + '</h2><div id="doc-lines">' + DOCD.lines.map(function (l, i) { return docLineRow(l, i, form, lro); }).join('') + '</div>' +
         (lro ? '' : '<button class="link" data-act="doc-line-add" id="doc-line-add">' + esc(t('doc.add_line')) + '</button>') +
         (d.doc_type === 'TRF' ? trfSection(d) : '') +
-        (d.document_id && form.price ? (form.expense ? expTotals(d) : '<p id="doc-totals"><b>' + esc(t('doc.total_net', {v: eur(d.total_net)})) + '</b></p>') : '') +
+        (d.document_id && form.price ? (form.expense || form.sale ? expTotals(d) : '<p id="doc-totals"><b>' + esc(t('doc.total_net', {v: eur(d.total_net)})) + '</b></p>') : '') +
         (d.total_cost != null && d.state === 'posted' ? '<p class="muted">' + esc(t('doc.total_cost', {v: eur(d.total_cost)})) + '</p>' : '') +
-        (probs ? '<div class="msg" id="doc-problem-box">' + esc(t('doc.problems')) + probs + '</div>' : '');
+        (probs ? '<div class="msg" id="doc-problem-box">' + esc(t('doc.problems')) + probs + '</div>' : '') + (form.sale ? salSection(d) : '');
     },
     mount: d.doc_type === 'GRN' ? function () { dnMount(d); } : null,
     save: ro ? null : function () { return api('doc_save_draft', {p_type: d.doc_type, p_doc: docPayload()}, {write: true, key: D.key}); },
-    onSaved: function (doc) { if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else docDrawer(doc); stkLoad(true); }});
+    onSaved: function (doc) { if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else if (DOC_FORM[doc.doc_type].sale) salOpen(doc.document_id); else docDrawer(doc); stkLoad(true); }});
 }
 function docReadLines() {
   if (DOCD.form.expense) return expReadLines();
+  if (DOCD.form.sale) return salReadLines();
   var rows = document.querySelectorAll('#doc-lines .dline');
   DOCD.lines = Array.prototype.map.call(rows, function (r, i) {
     var o = DOCD.lines[i] || {}, q = function (c) { var e = r.querySelector(c); return e ? e.value.trim() : ''; };
@@ -2531,6 +2716,7 @@ function docPayload() {
   if (form.head.some(function (f) { return f === 'mark' || f === 'reason' || f === 'cost_centre' || f === 'paid'; })) p.extra = extra;
   if (form.head.indexOf('delivery') >= 0) { if (Object.keys(extra.delivery || {}).length) p.extra = {delivery: extra.delivery}; else p.extra = {}; }
   if (form.expense) { p.lines = expPayloadLines(docReadLines()); return p; }
+  if (form.sale) return salPayload(p);
   p.lines = docReadLines().filter(function (l) { return l.item_id || l.qty; }).map(function (l) {
     var o = {item_id: l.item_id, qty: l.qty};
     if (l.unit_price !== undefined && l.unit_price !== '') o.unit_price = l.unit_price;
@@ -2571,7 +2757,7 @@ async function docSaveIfDirty() {
   if (r.ok && r.data) { D.dirty = false; D.key = uuid(); DOCD.doc = r.data; }
   return r;
 }
-function docShow(doc, msg) { drawerClose(true); if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else docDrawer(doc); if (msg) toast(msg); stkLoad(true); }
+function docShow(doc, msg) { drawerClose(true); if (doc.doc_type === 'TRF') trfOpen(doc.document_id); else if (DOC_FORM[doc.doc_type].sale) salOpen(doc.document_id); else docDrawer(doc); if (msg) toast(msg); stkLoad(true); }
 async function docAct(to, opts) {
   var btns = document.querySelectorAll('#drawer footer button'); Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
   var s = await docSaveIfDirty();
@@ -3211,6 +3397,282 @@ ACT['exr-csv'] = function () {
   var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'expenses_' + r.group_by + '_' + r.date_from + '_' + r.date_to + '.csv';
   document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.parentNode.removeChild(a); }, 0);
 };
+/* ===== 50_sales.js ===== */
+/* ---------- sales: delivery notes, retail receipts (Draft 2, NON-FISCAL) ---------- */
+// The sales drawer IS the stock document drawer (30_stock.js, DOC_FORM.DN / RR / RS): header warehouse or branch /
+// date / customer (+ quick add) / delivery block / to be billed / payment method / delivery-note reference, lines by
+// item code or barcode with quantity, sale price and VAT class (empty = the item's class; VAT and gross as the server
+// computes them: per line, half up), server problems, buttons from `actions`, the negative-stock dialog on post, cancel
+// with a reason. This file adds the menu with its two tabs, the sale line, the "lines from a delivery note" picker of a
+// retail receipt and the print view (browser Print -> Save as PDF; every view carries "NOT A FISCAL DOCUMENT").
+var SAL_TABS = [
+  {id: 'dn', label: 'sal.tab.dn', caps: ['doc.dn.read'], types: ['DN']},
+  {id: 'rr', label: 'sal.tab.rr', caps: ['doc.rr.read', 'doc.rs.read'], types: ['RR', 'RS']}
+];
+var SAL_STATES = ['draft', 'posted', 'cancelled'];
+var SAL_METHODS = ['cash', 'card', 'bank', 'other'];
+var SAL_REASONS = ['sale', 'sale_on_approval', 'sample', 'repair', 'return', 'other'];
+var SAL = {tab: null, rows: [], next: null, seq: 0, f: {state: '', branch: '', q: ''}, custs: null, dns: null};
+onLogin(function () { SAL.custs = null; SAL.dns = null; SAL.f = {state: '', branch: '', q: ''}; });
+function salTabs() { return SAL_TABS.filter(function (x) { return canAny(x.caps); }); }
+async function salCustomers(force) {
+  if (SAL.custs && !force) return SAL.custs;
+  var r = can('counterparty.read') ? await api('counterparty_list', {p_filter: {kind: 'customer'}, p_limit: 200}) : {ok: false};
+  SAL.custs = r.ok && r.data ? r.data.rows.filter(function (c) { return c.kind !== 'supplier'; }) : [];
+  return SAL.custs;
+}
+async function salPrep() { await Promise.all([stkWarehouses(), salCustomers(), can('vat.read') ? expVats() : null]); }
+screen({id: 'sales', nav: 'nav.sales', caps: ['doc.dn.read', 'doc.rr.read', 'doc.rs.read'],
+  render: function (sub) {
+    var tabs = salTabs(), want = sub[0];
+    SAL.tab = tabs.some(function (x) { return x.id === want; }) ? want : tabs[0].id; SAL.rows = []; SAL.next = null;
+    return '<h1>' + esc(t('sal.title')) + '</h1><p class="msg" id="sal-nonfiscal">' + esc(t('sal.nonfiscal_note')) + '</p><div class="tabs" id="sal-tabs">' + tabs.map(function (x) {
+      return '<a href="#/sales/' + x.id + '" data-act="go" data-to="sales" data-sub="' + x.id + '" class="' + (x.id === SAL.tab ? 'on' : '') + '">' + esc(t(x.label)) + '</a>';
+    }).join('') + '</div><div id="sal-bar" class="row" style="margin-bottom:10px"></div><div id="sal-body"><p class="muted">' + esc(t('app.loading')) + '</p></div>';
+  },
+  mount: async function () { await salPrep(); salBar(); salLoad(true); }
+});
+function salBar() {
+  var bar = $('sal-bar'); if (!bar) return;
+  var brs = S.me.branches || [], dn = SAL.tab === 'dn';
+  bar.innerHTML = sel('sal-state', [['', t('stk.all_states')]].concat(SAL_STATES.map(function (x) { return [x, t('doc.state.' + x)]; })), SAL.f.state).replace('<select', '<select style="width:auto"') +
+    (brs.length > 1 ? sel('sal-branch', expBranchOpts(true), SAL.f.branch).replace('<select', '<select style="width:auto"') : '') +
+    '<input id="sal-q" style="max-width:220px" placeholder="' + esc(t('sal.search')) + '" value="' + esc(SAL.f.q) + '"><span class="grow"></span>' +
+    (dn && can('doc.dn.create') ? '<button class="primary" id="sal-new-dn" data-act="sal-new" data-type="DN">' + esc(t('sal.new_dn')) + '</button>' : '') +
+    (!dn && can('doc.rr.create') ? '<button class="primary" id="sal-new-rr" data-act="sal-new" data-type="RR">' + esc(t('sal.new_rr')) + '</button>' : '') +
+    (!dn && can('doc.rs.create') ? '<button id="sal-new-rs" data-act="sal-new" data-type="RS">' + esc(t('sal.new_rs')) + '</button>' : '');
+}
+document.addEventListener('change', function (e) {
+  if (e.target.id === 'sal-state') { SAL.f.state = e.target.value; salLoad(true); }
+  else if (e.target.id === 'sal-branch') { SAL.f.branch = e.target.value; salLoad(true); }
+});
+var salqTimer = null;
+document.addEventListener('input', function (e) {
+  if (e.target.id !== 'sal-q') return;
+  clearTimeout(salqTimer); var v = e.target.value.trim();
+  salqTimer = setTimeout(function () { SAL.f.q = v; salLoad(true); }, 300);
+});
+async function salLoad(reset) {
+  if (!$('sal-body')) return;
+  var my = ++SAL.seq, tab = SAL.tab, def = SAL_TABS.find(function (x) { return x.id === tab; });
+  var f = {doc_types: def.types.filter(function (x) { return can(docCap(x, 'read')); })};
+  if (SAL.f.state) f.state = SAL.f.state; if (SAL.f.branch) f.branch_id = SAL.f.branch; if (SAL.f.q) f.q = SAL.f.q;
+  var r = await api('doc_list', {p_filter: f, p_cursor: reset ? null : SAL.next, p_limit: 50});
+  var body = $('sal-body'); if (my !== SAL.seq || SAL.tab !== tab || !body) return;
+  if (!r.ok) { body.innerHTML = '<div class="msg bad">' + esc(r.error.text) + '</div>'; return; }
+  SAL.rows = (reset ? [] : SAL.rows).concat(r.data.rows || []); SAL.next = r.data.next;
+  var dn = tab === 'dn', focus = document.activeElement && document.activeElement.id === 'sal-q';
+  body.innerHTML = tbl('sal-table', ['stk.col.date', 'stk.col.number'].concat(dn ? [] : ['sal.col.type'], ['sal.col.customer', 'exp.col.branch', 'stk.col.state', 'exp.col.gross', dn ? 'sal.col.billing' : 'sal.col.method']),
+    SAL.rows.map(function (d) {
+      var x = d.extra || {};
+      return '<tr class="click" data-act="sal-open" data-id="' + esc(d.document_id) + '"><td>' + esc(fmtDate(d.doc_date)) + '</td><td>' + esc(d.doc_no || '') + '</td>' +
+        (dn ? '' : '<td>' + esc(t('sal.short.' + d.doc_type)) + '</td>') + '<td>' + esc(d.counterparty_name || '') + '</td><td>' + esc(d.branch_code || '') + '</td><td>' + stateBadge(d.state) +
+        '</td><td>' + esc(eur(d.total_gross)) + '</td><td>' + (dn ? (x.to_be_billed === false ? '<span class="badge">' + esc(t('sal.not_billed')) + '</span>' : '<span class="muted">' + esc(t('sal.to_bill')) + '</span>')
+                                                               : (x.payment_method ? '<span class="badge good">' + esc(t('exp.method.' + x.payment_method)) + '</span>' : '')) + '</td></tr>';
+    }), dn ? 'sal.empty_dn' : 'sal.empty_rr') + (SAL.next ? '<div class="row end" style="margin-top:10px"><button id="sal-more" data-act="sal-more">' + esc(t('list.more')) + '</button></div>' : '');
+  if (focus) { var q = $('sal-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+}
+ACT['sal-more'] = function () { salLoad(false); };
+async function salOpen(id) {
+  var r = await api('sales_get', {p_document_id: id});
+  if (!r.ok) { toast(r.error.text); return; }
+  await salPrep(); if (r.data.doc_type === 'RR') await salDns(r.data);
+  if (D) drawerClose(true);
+  docDrawer(r.data);
+}
+ACT['sal-open'] = function (el) { salOpen(el.getAttribute('data-id')); };
+ACT['sal-new'] = async function (el) {
+  var type = el.getAttribute('data-type'); await salPrep();
+  var whs = STK.whs || [], brs = S.me.branches || [];
+  var d = {doc_type: type, state: 'draft', lines: [], can_edit: true, actions: [], problems: [], doc_date: S.me.today,
+           extra: type === 'DN' ? {delivery: {reason: 'sale'}, to_be_billed: true} : {payment_method: 'cash'}};
+  if (type === 'RS') d.branch_id = SAL.f.branch || (brs.length === 1 ? brs[0].branch_id : '');
+  else d.warehouse_id = whs.length === 1 ? whs[0].warehouse_id : '';
+  if (type === 'RR') await salDns(d);
+  docDrawer(d);
+};
+
+/* ---------- drawer parts (called by docHead / docLineRow / docReadLines / docPayload in 30_stock.js) ---------- */
+function salCustomerField(d, ro) {
+  var opts = (SAL.custs || []).map(function (c) { return [c.counterparty_id, c.name + (c.tax_id ? ' · ' + c.tax_id : '')]; });
+  if (d.counterparty_id && !opts.some(function (o) { return o[0] === d.counterparty_id; })) opts.push([d.counterparty_id, d.counterparty_name || d.counterparty_id]);
+  return field('s-cust', d.doc_type === 'DN' ? 'sal.f.customer' : 'sal.f.customer_opt', sel('s-cust', [['', t(d.doc_type === 'DN' ? 'md.choose' : 'sal.no_customer')]].concat(opts), d.counterparty_id || '', ro)) +
+    (!ro && can('counterparty.write') ? '<button type="button" class="link" id="sal-cust-new" data-act="sal-cust-new">' + esc(t('sal.cust_new')) + '</button>' : '');
+}
+ACT['sal-cust-new'] = function () {
+  promptBox(t('sal.cust_new_q'), t('md.f.name'), t('sal.cust_add'), async function (name) {
+    var r = await api('counterparty_save', {p_counterparty: {name: name, kind: 'customer'}}, {write: true});
+    if (!r.ok || !r.data) { toast(notSaved(r)); return; }
+    var row = r.data.row || r.data; (SAL.custs = SAL.custs || []).push(row);
+    var s = $('s-cust'); if (s) { var o = document.createElement('option'); o.value = row.counterparty_id; o.textContent = row.name; s.appendChild(o); s.value = row.counterparty_id; }
+    if (D) D.dirty = true; toast(t('sal.cust_added', {name: row.name}));
+  }, true);
+};
+function salDeliveryFields(d, ro) {
+  var x = (d.extra || {}).delivery || {};
+  return field('s-reason', 'sal.f.reason', sel('s-reason', [['', t('md.choose')]].concat(SAL_REASONS.map(function (r) { return [r, t('sal.reason.' + r)]; })), x.reason || '', ro)) +
+    field('s-addr', 'sal.f.address', inp('s-addr', x.address, 'text', ro)) + field('s-carrier', 'trf.f.carrier', inp('s-carrier', x.carrier, 'text', ro)) +
+    field('s-vehicle', 'trf.f.vehicle', inp('s-vehicle', x.vehicle, 'text', ro));
+}
+function salBilledField(d, ro) { return chk('s-billed', 'sal.f.to_be_billed', (d.extra || {}).to_be_billed !== false, ro); }
+function salPaymentField(d, ro) {
+  return field('s-pm', 'sal.f.method', sel('s-pm', [['', t('md.choose')]].concat(SAL_METHODS.map(function (m) { return [m, t('exp.method.' + m)]; })), (d.extra || {}).payment_method || '', ro));
+}
+// RR: the posted delivery notes (to be billed) a receipt may bill; plain link (no conversion machinery)
+async function salDns(d) {
+  SAL.dns = [];
+  if (!can('doc.dn.read')) return;
+  var r = await api('doc_list', {p_filter: {doc_type: 'DN', state: 'posted'}, p_limit: 100});
+  SAL.dns = r.ok && r.data ? r.data.rows.filter(function (x) { return (x.extra || {}).to_be_billed !== false; }) : [];
+}
+function salDnRefField(d, ro) {
+  if (!can('doc.dn.read') && !d.ref_document_id) return '';
+  var opts = (SAL.dns || []).map(function (x) { return [x.document_id, x.doc_no + ' · ' + (x.counterparty_name || '') + ' · ' + fmtDate(x.doc_date)]; });
+  var cur = d.ref_document_id || '', dn = (d.sales || {}).dn;
+  if (cur && !opts.some(function (o) { return o[0] === cur; })) opts.push([cur, dn ? dn.doc_no : cur]);
+  return field('s-dn', 'sal.f.dn', sel('s-dn', [['', t('sal.no_dn')]].concat(opts), cur, ro)) +
+    (ro ? '' : '<button type="button" class="link" id="sal-dn-lines" data-act="sal-dn-lines">' + esc(t('sal.dn_lines')) + '</button>');
+}
+ACT['sal-dn-lines'] = async function () {
+  var id = val('s-dn'); if (!id) { drawerMsg(t('sal.choose_dn')); return; }
+  var r = await api('sales_get', {p_document_id: id});
+  if (!r.ok) { drawerMsg(r.error.text); return; }
+  var dn = r.data, left = {}, added = 0;
+  ((dn.sales || {}).billing || {}).lines.forEach(function (b) { left[b.line_id] = Number(b.remaining); });
+  salReadLines();
+  var taken = DOCD.lines.map(function (l) { return l.dn_line_id; });
+  DOCD.lines = DOCD.lines.filter(function (l) { return l.item_id || l.qty || l.description; });
+  (dn.lines || []).forEach(function (l) {
+    if (!(left[l.line_id] > 0) || taken.indexOf(l.line_id) >= 0) return;
+    DOCD.lines.push({item_id: l.item_id, item_code: l.item_code, item_name: l.item_name, qty: String(left[l.line_id]), unit_price: l.unit_price != null ? l.unit_price : '',
+                     vat_class_id: l.vat_class_id, dn_line_id: l.line_id, dn_no: dn.doc_no}); added++;
+  });
+  if (dn.counterparty_id && $('s-cust')) {
+    var s = $('s-cust');
+    if (!Array.prototype.some.call(s.options, function (o) { return o.value === dn.counterparty_id; })) { var o = document.createElement('option'); o.value = dn.counterparty_id; o.textContent = dn.counterparty_name || ''; s.appendChild(o); }
+    s.value = dn.counterparty_id;
+  }
+  if (!DOCD.lines.length) DOCD.lines.push({});
+  $('doc-lines').innerHTML = DOCD.lines.map(function (l, i) { return salLineRow(l, i, DOCD.form, false); }).join('');
+  if (D) D.dirty = true;
+  drawerMsg(added ? '' : t('sal.dn_nothing_left'));
+};
+function salVatOpts(cur) {
+  var v = (EXP.vats || []).slice();
+  if (cur && !expVat(cur)) v.push({vat_class_id: cur, code: '?', rate: 0});
+  return [['', t('sal.vat_item')]].concat(v.map(function (x) { return [x.vat_class_id, x.code + ' (' + Number(x.rate) + '%)']; }));
+}
+function salLineRow(l, i, form, ro) {
+  var dis = ro ? ' disabled' : '', fixed = ro || !!l.dn_line_id;   // a billed DN line keeps its item
+  return '<div class="dline sll" data-i="' + i + '">' +
+    '<div class="dl-item"><input class="dl-code" placeholder="' + esc(t('doc.f.item')) + '" value="' + esc(l.item_code || '') + '"' + (fixed ? ' disabled' : '') + '>' +
+    '<span class="muted dl-name">' + esc(l.item_name || '') + (l.on_hand != null ? ' · ' + esc(t('doc.on_hand', {qty: qtyTxt(l.on_hand)})) : '') + '</span></div>' +
+    (form.service ? '<input class="dl-desc" placeholder="' + esc(t('sal.f.description')) + '" maxlength="500" value="' + esc(l.description || '') + '"' + dis + '>' : '') +
+    '<input class="dl-qty" inputmode="decimal" placeholder="' + esc(t('doc.f.qty')) + '" value="' + esc(l.qty != null && l.qty !== '' ? qtyTxt(l.qty).replace(/,/g, '') : '') + '"' + dis + '>' +
+    '<input class="dl-price" inputmode="decimal" placeholder="' + esc(t('sal.f.price')) + '" value="' + esc(l.unit_price != null && l.unit_price !== '' ? Number(l.unit_price) : '') + '"' + dis + '>' +
+    sel('', salVatOpts(l.vat_class_id), l.vat_class_id || '', ro).replace('<select id=""', '<select class="dl-vat" aria-label="' + esc(t('exp.f.vat')) + '"') +
+    '<span class="dl-amt">' + (l.line_id && l.gross != null ? esc(t('sal.line_amt', {net: eur(l.net), vat: eur(l.vat), gross: eur(l.gross)})) : '') +
+    (l.cost_value != null ? ' <span class="muted">' + esc(t('doc.cost', {v: eur(l.cost_value)})) + '</span>' : '') + '</span>' +
+    (ro ? '' : '<button class="link dl-del" data-act="doc-line-del" data-i="' + i + '" title="' + esc(t('doc.remove_line')) + '">✕</button>') +
+    '<input type="hidden" class="dl-id" value="' + esc(l.item_id || '') + '"><input type="hidden" class="dl-dnl" value="' + esc(l.dn_line_id || (l.extra || {}).dn_line_id || '') + '">' +
+    (l.dn_line_id || (l.extra || {}).dn_line_id ? '<span class="dl-dn muted">' + esc(t('sal.from_dn', {no: l.dn_no || ((DOCD && DOCD.doc.sales && DOCD.doc.sales.dn) || {}).doc_no || ''})) + '</span>' : '') + '</div>';
+}
+function salReadLines() {
+  var rows = document.querySelectorAll('#doc-lines .dline');
+  DOCD.lines = Array.prototype.map.call(rows, function (r, i) {
+    var o = DOCD.lines[i] || {}, q = function (c) { var e = r.querySelector(c); return e ? e.value.trim() : ''; };
+    o.item_code = q('.dl-code'); o.item_id = q('.dl-id') || null; o.qty = q('.dl-qty').replace(',', '.'); o.unit_price = q('.dl-price').replace(',', '.');
+    o.vat_class_id = q('.dl-vat') || null; o.dn_line_id = q('.dl-dnl') || null;
+    if (r.querySelector('.dl-desc')) o.description = q('.dl-desc');
+    return o;
+  });
+  return DOCD.lines;
+}
+function salPayload(p) {
+  var d = DOCD.doc, x = {};
+  if ($('s-cust')) p.counterparty_id = val('s-cust') || null;
+  if (d.doc_type === 'DN') {
+    var dl = {reason: val('s-reason'), address: val('s-addr').trim(), carrier: val('s-carrier').trim(), vehicle: val('s-vehicle').trim()};
+    Object.keys(dl).forEach(function (k) { if (!dl[k]) delete dl[k]; });
+    x.delivery = dl; x.to_be_billed = $('s-billed') ? $('s-billed').checked : true;
+  } else if (val('s-pm')) x.payment_method = val('s-pm');
+  p.extra = x;
+  if ($('s-dn')) p.ref_document_id = val('s-dn') || null;
+  p.lines = salReadLines().filter(function (l) { return l.item_id || l.qty || l.description || l.unit_price; }).map(function (l) {
+    var o = {qty: l.qty};
+    if (l.item_id) o.item_id = l.item_id;
+    if (l.description) o.description = l.description;
+    if (l.unit_price !== '' && l.unit_price != null) o.unit_price = l.unit_price;
+    if (l.vat_class_id) o.vat_class_id = l.vat_class_id;   // empty = the item's VAT class (key omitted)
+    if (l.dn_line_id) o.extra = {dn_line_id: l.dn_line_id};
+    return o;
+  });
+  return p;
+}
+function salSection(d) {
+  var s = d.sales || {}, h = '<div id="sal-info"><p class="msg bad" id="sal-watermark"><b>' + esc(t('sal.watermark')) + '</b> ' + esc(t('sal.fiscal_note')) + '</p>';
+  if (d.doc_type === 'DN' && s.billing && d.state === 'posted') {
+    h += '<p class="muted" id="sal-billing">' + esc(t('sal.billing.' + s.billing.status)) + (s.billing.receipts || []).map(function (r) {
+      return ' · ' + esc(r.doc_no || t('doc.state.draft')) + ' (' + esc(t('doc.state.' + r.state)) + ')'; }).join('') + '</p>';
+  }
+  if (s.collection && d.state === 'posted') h += '<p class="muted" id="sal-collection">' + esc(t('sal.collected', {m: t('exp.method.' + (s.collection.payment_method || 'other')), v: eur(s.collection.amount)})) + '</p>';
+  return h + '</div>';
+}
+
+/* ---------- print view (browser Print -> Save as PDF) ---------- */
+ACT['sal-print'] = async function () {
+  if (!DOCD || !DOCD.doc.document_id) return;
+  if (D && D.dirty) { drawerMsg(t('sal.print_save_first')); return; }
+  var r = await api('sales_get', {p_document_id: DOCD.doc.document_id});
+  if (!r.ok) { drawerMsg(r.error.text); return; }
+  salPrintShow(r.data);
+};
+function salPrintShow(d) {
+  var s = d.sales || {}, is = s.issuer || {}, c = s.customer, x = d.extra || {}, dl = x.delivery || {}, vats = {};
+  (s.vat_breakdown || []).forEach(function (v) { vats[v.vat_class_id] = v; });
+  var addr = function (o) { return [o.street, [o.postal_code, o.city].filter(Boolean).join(' '), o.country && o.country !== 'GR' ? o.country : ''].filter(Boolean).join(', '); };
+  var lines = (d.lines || []).map(function (l, i) {
+    var v = vats[l.vat_class_id];
+    return '<tr><td>' + (i + 1) + '</td><td>' + esc(l.item_code || '') + '</td><td>' + esc(l.item_name || l.description || '') + (l.item_name && l.description ? ' · ' + esc(l.description) : '') + '</td><td class="num">' +
+      esc(qtyTxt(l.qty)) + '</td><td class="num">' + (l.unit_price != null ? esc(eur(l.unit_price)) : '') + '</td><td class="num">' + (Number(l.discount_pct) ? esc(Number(l.discount_pct) + '%') : '') +
+      '</td><td class="num">' + (v ? esc(Number(v.rate) + '%') : '') + '</td><td class="num">' + esc(eur(l.net)) + '</td><td class="num">' + esc(eur(l.vat)) + '</td><td class="num">' + esc(eur(l.gross)) + '</td></tr>';
+  }).join('');
+  var vtab = (s.vat_breakdown || []).map(function (v) {
+    return '<tr><td>' + esc(v.code || '-') + (v.rate != null ? ' (' + esc(Number(v.rate)) + '%)' : '') + '</td><td class="num">' + esc(eur(v.net)) + '</td><td class="num">' + esc(eur(v.vat)) + '</td><td class="num">' + esc(eur(v.gross)) + '</td></tr>';
+  }).join('');
+  var el = document.createElement('div'); el.id = 'print-view'; el.className = 'print-view';
+  el.innerHTML = '<div class="pv-bar"><button class="primary" id="pv-print" data-act="pv-print">' + esc(t('sal.print_btn')) + '</button><button id="pv-close" data-act="pv-close">' + esc(t('drawer.close')) + '</button>' +
+    '<span class="muted">' + esc(t('sal.print_hint')) + '</span></div>' +
+    '<div class="pv-page"><div class="pv-wm" aria-hidden="true">' + esc(s.watermark || t('sal.watermark')) + '</div>' +
+    '<p class="pv-banner" id="pv-banner">' + esc(s.watermark || t('sal.watermark')) + '</p>' +
+    '<div class="pv-head"><div class="pv-issuer" id="pv-issuer">' + (is.logo_url ? '<img src="' + esc(is.logo_url) + '" alt="" class="pv-logo">' : '') +
+      '<b>' + esc(is.legal_name || is.name || '') + '</b>' + (is.legal_name && is.name && is.legal_name !== is.name ? '<br>' + esc(is.name) : '') +
+      (is.tax_id ? '<br>' + esc(t('sal.p.tax_id')) + ' ' + esc(is.tax_id) + (is.tax_office ? ' · ' + esc(is.tax_office) : '') : '') +
+      (is.address ? '<br>' + esc(is.address) : '') + (is.phone || is.email ? '<br>' + esc([is.phone, is.email].filter(Boolean).join(' · ')) : '') +
+      '<br><span class="muted">' + esc(t('sal.p.branch', {code: (s.branch || {}).code || '', name: (s.branch || {}).name || ''})) +
+      ((s.branch || {}).establishment_no != null ? ' · ' + esc(t('sal.p.estab', {n: s.branch.establishment_no})) : '') + ((s.branch || {}).address ? ' · ' + esc(s.branch.address) : '') + '</span></div>' +
+    '<div class="pv-title"><h1 id="pv-title">' + esc(t('doc.type.' + d.doc_type)) + '</h1><p><b id="pv-no">' + esc(d.doc_no || t('sal.p.draft')) + '</b><br>' + esc(fmtDate(d.doc_date)) + '</p></div></div>' +
+    '<div class="pv-boxes">' + (c ? '<div class="pv-box" id="pv-customer"><b>' + esc(t('sal.p.customer')) + '</b><br>' + esc(c.name) + (c.tax_id ? '<br>' + esc(t('sal.p.tax_id')) + ' ' + esc(c.tax_id) + (c.tax_office ? ' · ' + esc(c.tax_office) : '') : '') +
+      (addr(c) ? '<br>' + esc(addr(c)) : '') + '</div>' : '') +
+    (d.doc_type === 'DN' ? '<div class="pv-box" id="pv-delivery"><b>' + esc(t('sal.p.delivery')) + '</b><br>' + esc(t('sal.f.reason')) + ': ' + esc(dl.reason ? t('sal.reason.' + dl.reason) : '') +
+      (s.warehouse ? '<br>' + esc(t('sal.p.from', {wh: s.warehouse.code + ' · ' + s.warehouse.name})) : '') + (dl.address ? '<br>' + esc(t('sal.f.address')) + ': ' + esc(dl.address) : '') +
+      (dl.carrier ? '<br>' + esc(t('sal.p.carrier')) + ': ' + esc(dl.carrier) : '') + (dl.vehicle ? '<br>' + esc(t('sal.p.vehicle')) + ': ' + esc(dl.vehicle) : '') +
+      '<br>' + esc(t(x.to_be_billed === false ? 'sal.not_billed' : 'sal.to_bill')) + '</div>'
+      : '<div class="pv-box" id="pv-payment"><b>' + esc(t('sal.f.method')) + '</b><br>' + esc(x.payment_method ? t('exp.method.' + x.payment_method) : '') +
+        (s.dn ? '<br>' + esc(t('sal.p.dn', {no: s.dn.doc_no})) : '') + '</div>') + '</div>' +
+    '<table class="pv-lines" id="pv-lines"><thead><tr><th>#</th><th>' + esc(t('sal.p.code')) + '</th><th>' + esc(t('sal.p.desc')) + '</th><th class="num">' + esc(t('doc.f.qty')) + '</th><th class="num">' +
+      esc(t('sal.f.price')) + '</th><th class="num">' + esc(t('sal.p.disc')) + '</th><th class="num">' + esc(t('sal.p.vat_pct')) + '</th><th class="num">' + esc(t('exp.col.net')) + '</th><th class="num">' +
+      esc(t('exp.col.vat')) + '</th><th class="num">' + esc(t('exp.col.gross')) + '</th></tr></thead><tbody>' + lines + '</tbody></table>' +
+    '<div class="pv-foot"><table class="pv-vat" id="pv-vat"><thead><tr><th>' + esc(t('exp.f.vat')) + '</th><th class="num">' + esc(t('exp.col.net')) + '</th><th class="num">' + esc(t('exp.col.vat')) +
+      '</th><th class="num">' + esc(t('exp.col.gross')) + '</th></tr></thead><tbody>' + vtab + '</tbody></table>' +
+      '<p class="pv-total" id="pv-total">' + esc(t('exp.totals', {net: eur(d.total_net), vat: eur(d.total_vat), gross: eur(d.total_gross)})) + '</p></div>' +
+    (d.state === 'cancelled' ? '<p class="pv-banner">' + esc(t('sal.p.cancelled', {r: d.cancel_reason || ''})) + '</p>' : '') +
+    '<p class="pv-note">' + esc(t('sal.fiscal_note')) + '</p></div>';
+  document.body.appendChild(el);
+  document.body.classList.add('printing');
+}
+ACT['pv-print'] = function () { window.print(); };
+ACT['pv-close'] = function () { var el = $('print-view'); if (el) el.parentNode.removeChild(el); document.body.classList.remove('printing'); };
 /* ===== 90_admin.js ===== */
 /* ---------- admin: members, branches, settings (T04) ---------- */
 // Opened by owner / manager / accounting (02 matrix row 1). Each tab has its own capability; write buttons only
@@ -3372,6 +3834,7 @@ ACT['branch-new'] = function () { branchDrawer({active: true}); };
 ACT['branch-open'] = function (el) { var b = ADM.branches.find(function (x) { return x.branch_id === el.getAttribute('data-id'); }); if (b) branchDrawer(b); };
 
 /* ---------- admin: settings ---------- */
+var ISSUER_KEYS = ['legal_name', 'tax_id', 'tax_office', 'address', 'phone', 'email'];
 function zones(cur) {
   var z = [];
   try { z = Intl.supportedValuesOf('timeZone'); } catch (x) { z = []; }
@@ -3392,6 +3855,8 @@ async function settingsLoad() {
     chk('s-hide', 'settings.f.hide_money', s.hide_money, ro) +
     field('s-explim', 'settings.f.exp_limit', inp('s-explim', (s.thresholds || {}).exp_value != null ? s.thresholds.exp_value : '', 'text', ro)) +
     field('s-logo', 'settings.f.logo_url', inp('s-logo', s.logo_url, 'url', ro)) +
+    '<h2 style="margin-top:14px">' + esc(t('settings.issuer')) + '</h2>' + ISSUER_KEYS.map(function (k) {   // Draft 2: printed on sales documents
+      return field('s-iss-' + k, 'settings.f.issuer_' + k, inp('s-iss-' + k, (s.issuer || {})[k], 'text', ro)); }).join('') +
     '<div class="msg bad" id="s-msg"></div>' +
     (ro ? '' : '<div class="row end"><button type="submit" class="primary" id="s-save">' + esc(t('settings.save')) + '</button></div>') + '</form></div>');
 }
@@ -3405,6 +3870,9 @@ FORM.settings = async function () {
   if (lock !== (s.lock_date || null)) p.lock_date = lock;
   if ($('s-hide').checked !== !!s.hide_money) p.hide_money = $('s-hide').checked;
   var logo = val('s-logo').trim() || null; if (logo !== (s.logo_url || null)) p.logo_url = logo;
+  var iss = {}, issOld = s.issuer || {};
+  ISSUER_KEYS.forEach(function (k) { var v = val('s-iss-' + k).trim(); if (v) iss[k] = k === 'tax_id' ? v.toUpperCase().replace(/\s+/g, '') : v; });
+  if (JSON.stringify(iss) !== JSON.stringify(ISSUER_KEYS.reduce(function (o, k) { if (issOld[k]) o[k] = issOld[k]; return o; }, {}))) p.issuer = iss;
   var limTxt = val('s-explim').trim().replace(',', '.'), lim = limTxt === '' ? null : Number(limTxt), thr = Object.assign({}, s.thresholds || {});
   if (limTxt !== '' && (isNaN(lim) || lim < 0)) { msg.textContent = t('save.not_saved', {reason: t('settings.exp_limit_invalid')}); return; }
   if (lim !== (thr.exp_value != null ? Number(thr.exp_value) : null)) { if (lim === null) delete thr.exp_value; else thr.exp_value = lim; p.thresholds = thr; }

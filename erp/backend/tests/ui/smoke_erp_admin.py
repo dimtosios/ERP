@@ -44,7 +44,7 @@ with sync_playwright() as p:
     # ---------- owner ----------
     pg = page(br, "owner")
     navs = pg.locator("#nav a").all_inner_texts()
-    check(navs == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Admin"], "owner nav: Home, Master data, Stock, Transfers, Expenses, Admin %s" % navs)
+    check(navs == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Sales", "Admin"], "owner nav: Home, Master data, Stock, Transfers, Expenses, Sales, Admin %s" % navs)
     check("iSmile" in pg.inner_text(".top") and "SER" in pg.inner_text("#main"), "home: tenant + branches")
     pg.click("#nav a[data-to=admin]")
     pg.wait_for_selector("#m-table")
@@ -158,7 +158,7 @@ with sync_playwright() as p:
     # ---------- clinic_user: no Admin, guard on a typed URL ----------
     pg = page(br, "clinic_user", hash_="#/admin/settings")
     pg.wait_for_selector("#home-lead")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock"], "clinic_user nav: Home, Master data, Stock (no Admin)")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Sales"], "clinic_user nav: Home, Master data, Stock (no Admin)")
     check("cannot open" in pg.inner_text("#toast") and len(calls(pg, "settings_get")) == 0, "typed #/admin: role guard toast, home, no admin call")
     check(all(c.get("schema") == "erp_api" for c in pg.evaluate("__calls") if "schema" in c), "every RPC through erp_api")
     pg.context.close()

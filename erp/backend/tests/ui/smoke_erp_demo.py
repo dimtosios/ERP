@@ -65,7 +65,7 @@ def scenario(br):
     check(pg.locator("#demo-role option").count() == len(seed["users"]), "role switcher lists every demo member")
     check(seed["tenant"]["name"] in pg.inner_text(".top .brand") and "SER · Serres" in pg.inner_text("#main") and "ALE · Alexandreia" in pg.inner_text("#main"),
           "owner home: demo tenant, three clinics")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Admin"], "owner nav")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Sales", "Admin"], "owner nav")
     pg.evaluate("location.hash = '#/stock/alerts'"); wait_text(pg, "#stk-table", "Negative stock")
     al = pg.inner_text("#stk-table")
     check(al.count("Low stock") >= 3 and "ELA-14M in ALE-MAIN is at -4" in al, "seeded alerts: several low stock + one negative (ELA-14M ALE)")
@@ -93,7 +93,7 @@ def scenario(br):
 
     # ---------- 2. consume past zero (clinic user, Alexandreia) ----------
     role(pg, "clinic", "#/stock/documents")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock"], "clinic user nav: no Transfers / Expenses / Admin")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Sales"], "clinic user nav: no Transfers / Expenses / Admin")
     pg.wait_for_selector("#stk-new")
     check(pg.locator("#stk-newtype option").all_inner_texts() == ["Consumption"], "clinic user can only create Consumption")
     st = pg.inner_text("#stk-table")
@@ -120,7 +120,7 @@ def scenario(br):
     pg.click("#drawer footer [data-act=doc-action][data-to=dispatched]"); wait_text(pg, "#drawer header", "TRF-SER/000002"); close(pg)
     check(bal(pg, "TRANSIT", "BRK-C22") == 3, "dispatched: 3 in transit")
     role(pg, "warehouse", "#/transfers"); wait_text(pg, "#trf-table", "TRF-SER/000002")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses"], "warehouse nav: no Admin")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Sales"], "warehouse nav: no Admin")
     pg.click("#trf-table tbody tr:has-text('TRF-SER/000002')"); pg.wait_for_selector("#drawer footer [data-act=trf-receive]")
     pg.click("#drawer footer [data-act=trf-receive]"); pg.wait_for_selector("#rc-lines .rc-line")
     pg.fill("#rc-lines .rc-line .rc-qty", "2"); pg.fill("#rc-lines .rc-line .rc-reason", "One kit damaged")
@@ -143,7 +143,7 @@ def scenario(br):
 
     # ---------- 5. expense over the approval limit: accounting submits, manager approves ----------
     role(pg, "accounting", "#/expenses"); pg.wait_for_selector("#exp-new")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Admin"], "accounting nav %s" % pg.locator("#nav a").all_inner_texts())
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Sales", "Admin"], "accounting nav %s" % pg.locator("#nav a").all_inner_texts())
     pg.click("#exp-new"); pg.wait_for_selector("#doc-lines .exl")
     pg.select_option("#d-branch", "b1"); pg.fill("#d-extno", "SRV-0042")
     pg.select_option("#doc-lines .exl .dl-cat", "ec-MAINT"); pg.fill("#doc-lines .exl .dl-desc", "Autoclave service"); pg.fill("#doc-lines .exl .dl-net", "450")

@@ -147,6 +147,9 @@ create table if not exists erp.tenant_settings (
   version             int not null default 1,
   updated_at          timestamptz not null default now()
 );
+-- Draft 2: the issuer block printed on sales documents (legal_name, tax_id, tax_office, address, phone, email); the
+-- trading name is tenants.name, the branch adds its own address / establishment number
+alter table erp.tenant_settings add column if not exists issuer jsonb not null default '{}'::jsonb check (jsonb_typeof(issuer) = 'object');
 
 create table if not exists erp.tenant_usage (
   tenant_id uuid not null references erp.tenants (tenant_id),
@@ -583,7 +586,7 @@ create or replace function erp.settings_json(s erp.tenant_settings) returns json
 language sql stable set search_path = '' as $$
   select jsonb_build_object('time_zone', s.time_zone, 'valuation_method', s.valuation_method, 'negative_stock', s.negative_stock,
                             'lock_date', s.lock_date, 'thresholds', s.thresholds, 'logo_url', s.logo_url, 'hide_money', s.hide_money,
-                            'integration_enabled', s.integration_enabled, 'version', s.version, 'updated_at', s.updated_at)
+                            'integration_enabled', s.integration_enabled, 'issuer', s.issuer, 'version', s.version, 'updated_at', s.updated_at)
 $$;
 
 -- whoami: who the caller is, its tenant, visible branches, capabilities (the page builds buttons from them)
@@ -691,11 +694,12 @@ begin
 end $$;
 
 -- settings_save: owner. Keys: version (required, optimistic lock), time_zone, negative_stock, lock_date, hide_money,
--- logo_url, thresholds. valuation_method and integration_enabled are NOT changed here (valuation switch T39, phase IP).
+-- logo_url, thresholds, issuer (Draft 2: object of legal_name, tax_id, tax_office, address, phone, email; replaces the
+-- whole block; empty strings are dropped). valuation_method and integration_enabled are NOT changed here (valuation switch T39, phase IP).
 create or replace function erp_api.settings_save(p_settings jsonb, p_idempotency_key uuid) returns jsonb
 language plpgsql security definer set search_path = '' set statement_timeout = '8s' as $$
 declare m erp.members; prev jsonb; old erp.tenant_settings; s erp.tenant_settings; probs jsonb := '[]'; k text; res jsonb;
-        v_tz text; v_neg text; v_lock date; v_hide boolean; v_logo text; v_thr jsonb;
+        v_tz text; v_neg text; v_lock date; v_hide boolean; v_logo text; v_thr jsonb; v_iss jsonb; ie record;
 begin
   m := erp.require_member();
   perform erp.require_cap('tenant.settings.write');
@@ -704,7 +708,7 @@ begin
   if p_settings is null or jsonb_typeof(p_settings) <> 'object' then p_settings := '{}'; end if;
   select * into old from erp.tenant_settings where tenant_id = m.tenant_id for update;
   for k in select jsonb_object_keys(p_settings) loop
-    if k not in ('version', 'time_zone', 'negative_stock', 'lock_date', 'hide_money', 'logo_url', 'thresholds') then
+    if k not in ('version', 'time_zone', 'negative_stock', 'lock_date', 'hide_money', 'logo_url', 'thresholds', 'issuer') then
       probs := probs || erp.problem('not_editable', k, format('%s cannot be changed here.', k));
     end if;
   end loop;
@@ -742,9 +746,27 @@ begin
       probs := probs || erp.problem('invalid', 'thresholds', 'Every threshold must be a number >= 0.');
     else v_thr := p_settings -> 'thresholds'; end if;
   end if;
+  v_iss := old.issuer;
+  if p_settings ? 'issuer' then
+    if jsonb_typeof(p_settings -> 'issuer') <> 'object' then probs := probs || erp.problem('invalid', 'issuer', 'issuer must be an object.');
+    else
+      v_iss := '{}';
+      for ie in select * from jsonb_each(p_settings -> 'issuer') loop
+        if ie.key not in ('legal_name', 'tax_id', 'tax_office', 'address', 'phone', 'email') then
+          probs := probs || erp.problem('not_editable', 'issuer.' || ie.key, format('%s is not an issuer field.', ie.key));
+        elsif jsonb_typeof(ie.value) <> 'string' or length(ie.value #>> '{}') > 300 then
+          probs := probs || erp.problem('invalid', 'issuer.' || ie.key, 'Issuer fields are texts of at most 300 characters.');
+        elsif ie.key = 'tax_id' and btrim(ie.value #>> '{}') <> '' and btrim(ie.value #>> '{}') !~ '^[A-Z0-9]{2,20}$' then
+          probs := probs || erp.problem('invalid', 'issuer.tax_id', 'Tax ID: 2-20 capital letters or digits.');
+        elsif btrim(ie.value #>> '{}') <> '' then
+          v_iss := v_iss || jsonb_build_object(ie.key, btrim(ie.value #>> '{}'));
+        end if;
+      end loop;
+    end if;
+  end if;
   perform erp.raise_problems(probs);
   update erp.tenant_settings set time_zone = v_tz, negative_stock = v_neg, lock_date = v_lock, hide_money = v_hide, logo_url = v_logo,
-         thresholds = v_thr, version = version + 1, updated_at = now()
+         thresholds = v_thr, issuer = v_iss, version = version + 1, updated_at = now()
    where tenant_id = m.tenant_id returning * into s;
   perform erp.audit(m.tenant_id, 'settings.update', 'tenant_settings', m.tenant_id::text,
                     erp.settings_json(old) - 'updated_at', erp.settings_json(s) - 'updated_at');

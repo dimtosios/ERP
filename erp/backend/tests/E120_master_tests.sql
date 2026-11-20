@@ -261,7 +261,7 @@ select t.ok(t.codes(t.problems($$select erp_api.series_save('{"doc_type": "GRN",
             'branch series needs a branch; code unique per type');
 select t.ok(t.problems(format($$select erp_api.series_save('{"doc_type": "OPN", "code": "OPN", "branch_id": "%s"}', gen_random_uuid())$$, t.br(t.a(), 'A1'))) -> 0 ->> 'field' = 'branch_id',
             'OPN series are organisation-wide (01 C3: series "tenant")');
-select t.ok(t.codes(t.problems(format($$select erp_api.series_save('{"doc_type": "DN", "code": "DN1", "branch_id": "%s", "gapless": false}', gen_random_uuid())$$, t.br(t.a(), 'A1'))))
+select t.ok(t.codes(t.problems(format($$select erp_api.series_save('{"doc_type": "SINV", "code": "SINV1", "branch_id": "%s", "gapless": false}', gen_random_uuid())$$, t.br(t.a(), 'A1'))))
             = 'invalid:gapless', 'a fiscal type is always gapless');
 select t.ok(t.problems(format($$select erp_api.series_save('{"doc_type": "GRN", "code": "G2", "branch_id": "%s", "numbering": "provider"}', gen_random_uuid())$$, t.br(t.a(), 'A1'))) -> 0 ->> 'field' = 'numbering',
             'provider numbering only for fiscal types');
@@ -277,12 +277,12 @@ select t.ok(t.codes(t.problems(format($$select erp_api.series_save('{"series_id"
             = 'in_use:branch_id,in_use:next_no', 'after the first number: branch and next number are fixed');
 select t.ok((erp_api.series_save(jsonb_build_object('series_id', t.ser(t.a(), 'GRN-A1-VAN'), 'active', false), gen_random_uuid())) ->> 'active' = 'false', '...but it can be deactivated');
 reset role;
-update erp.doc_types set enabled = true where doc_type in ('GRN', 'OPN', 'DN');   -- as if E150 had enabled them (rolled back)
+update erp.doc_types set enabled = true where doc_type in ('GRN', 'OPN', 'SINV');   -- as if E150 had enabled them (rolled back)
 set local role authenticated;
 select t.as(1);
 select t.keep(erp_api.series_create_defaults(t.br(t.a(), 'A2'), gen_random_uuid()));
 select t.ok((select string_agg(r ->> 'code', ',' order by r ->> 'code') from jsonb_array_elements(t.j() -> 'created') r) like '%GRN-A2,OPN%'
-            and not exists (select 1 from jsonb_array_elements(t.j() -> 'created') r where r ->> 'doc_type' = 'DN'), 'defaults: GRN-A2 and the tenant-wide OPN; no fiscal DN');
+            and not exists (select 1 from jsonb_array_elements(t.j() -> 'created') r where r ->> 'doc_type' = 'SINV'), 'defaults: GRN-A2 and the tenant-wide OPN; no fiscal SINV (DN is non-fiscal in v1: E210)');
 select t.ok(jsonb_array_length((erp_api.series_create_defaults(t.br(t.a(), 'A2'), gen_random_uuid())) -> 'created') = 0, 'second call creates nothing');
 select t.keep(erp_api.series_create_defaults(t.br(t.a(), 'A1'), gen_random_uuid()));
 select t.ok(not exists (select 1 from jsonb_array_elements(t.j() -> 'created') r where r ->> 'doc_type' = 'GRN') and t.j() -> 'skipped' = '["GRN"]',

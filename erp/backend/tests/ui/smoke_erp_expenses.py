@@ -51,7 +51,7 @@ def scenario(br):
 
     # ---------- owner: list, filters ----------
     pg = page(br, "owner")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Admin"], "owner nav has Expenses")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Sales", "Admin"], "owner nav has Expenses")
     wait_text(pg, "#exp-table", "EXP-SER/000001")
     txt = pg.inner_text("#exp-table")
     check("EXP-THE/000001" in txt and "Ortho Supplies SA" in txt and "INV-55" in txt and "€124.00" in txt and "Card" in txt and "Not paid" in txt,

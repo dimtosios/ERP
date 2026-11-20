@@ -115,6 +115,11 @@ do $do$ begin
          'content_base64', encode('\x255044462d312e340a78787878'::bytea, 'base64')), gen_random_uuid()) ->> 'attachment_id')::uuid,
       (select warehouse_id from erp.warehouses where code = 'BW1'), 'iso:b:dn:0001');
   end if;
+  if to_regprocedure('erp_api.sales_get(uuid)') is not null then   -- E210 (Draft 2): a delivery-note draft of B ('B dn')
+    perform erp_api.doc_save_draft('DN', jsonb_build_object('branch_id', (select branch_id from erp.branches where code = 'B1'), 'notes', 'B dn',
+      'warehouse_id', (select warehouse_id from erp.warehouses where code = 'BW1'), 'extra', '{"delivery": {"reason": "sale"}}'::jsonb,
+      'lines', jsonb_build_array(jsonb_build_object('item_id', (select item_id from erp.items where code = 'BITEM'), 'qty', 1, 'unit_price', 3))), gen_random_uuid());
+  end if;
 end $do$;
 reset role;
 
@@ -148,6 +153,11 @@ do $do$ begin
       'content_base64', encode('\x255044462d312e340a79797979'::bytea, 'base64')), gen_random_uuid());
     perform erp_api.attachment_add(jsonb_build_object('branch_id', (select branch_id from erp.branches where code = 'A1'), 'filename', 'A spare.pdf',
       'content_base64', encode('\x255044462d312e340a7a7a7a7a'::bytea, 'base64')), gen_random_uuid());
+  end if;
+  if to_regprocedure('erp_api.sales_get(uuid)') is not null then   -- E210: a delivery-note draft of A1 ('A dn')
+    perform erp_api.doc_save_draft('DN', jsonb_build_object('branch_id', (select branch_id from erp.branches where code = 'A1'), 'notes', 'A dn',
+      'warehouse_id', (select warehouse_id from erp.warehouses where code = 'AW1'), 'extra', '{"delivery": {"reason": "sale"}}'::jsonb,
+      'lines', jsonb_build_array(jsonb_build_object('item_id', (select item_id from erp.items where code = 'AITEM'), 'qty', 1, 'unit_price', 3))), gen_random_uuid());
   end if;
 end $do$;
 reset role;
@@ -396,6 +406,11 @@ do $do$ begin   -- E150 rows (T11 / T12)
              t.bid('select warehouse_id from erp.warehouses where code = ''AW1'''), 'iso:a:dn:0001')$$,
          $$select erp_api.grn_draft_from_extraction('{"lines": [{"description": "x", "qty": 1}]}', t.bid('select attachment_id from erp.attachments where filename = ''A spare.pdf'''),
              t.bid('select warehouse_id from erp.warehouses where code = ''BW1'''), 'iso:a:dn:0002')$$);
+  end if;
+  if to_regprocedure('erp_api.sales_get(uuid)') is not null then   -- E210 Draft 2
+    insert into t.rpc (fn, cap, call, cross_call) values
+      ('erp_api.sales_get(uuid)', 'doc.dn.read', $$select erp_api.sales_get(t.bid('select document_id from erp.documents where notes = ''A dn'''))$$,
+         $$select erp_api.sales_get(t.bid('select document_id from erp.documents where notes = ''B dn'''))$$);
   end if;
   if to_regprocedure('erp_api.recost_status()') is not null then   -- E140 T13
     insert into t.rpc (fn, cap, call, cross_call) values

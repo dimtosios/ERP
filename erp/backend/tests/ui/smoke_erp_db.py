@@ -277,11 +277,60 @@ with sync_playwright() as p:
     href = pg.get_attribute("#dn-files a.dn-link", "href")
     check(pg.evaluate("u => fetch(u).then(r => r.arrayBuffer()).then(b => b.byteLength)", href) == len(pdf), "delivery note: Open serves the stored bytes back from the DB")
     pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
+    # Draft 2, sales (NON-FISCAL) against the real database: a delivery note to a customer added from the drawer (gapless
+    # DN-SER/000001, stock out at cost), its print view, a retail receipt that bills it (no stock move, collection hook),
+    # then the DN cannot be cancelled while billed
+    SQ = "from erp.documents d join erp.tenants t using (tenant_id) where t.code = 'uitest' and d.doc_type = "
+    def post_ack():   # the post may warn about negative stock (earlier steps took BR-1 below zero): post anyway
+        pg.click("#drawer footer [data-act=doc-action][data-to=posted]")
+        pg.wait_for_function("document.getElementById('modal-text') || (document.querySelector('#drawer h2') && /(DN|RR)-SER\\//.test(document.querySelector('#drawer h2').textContent))", timeout=15000)
+        if pg.locator("#modal-ok").count():
+            pg.click("#modal-ok")
+        pg.wait_for_function("document.querySelector('#drawer h2') && /(DN|RR)-SER\\//.test(document.querySelector('#drawer h2').textContent)", timeout=15000)
+    pg.goto(html.as_uri() + "#/sales"); pg.wait_for_selector("#sal-new-dn")
+    pg.click("#sal-new-dn"); pg.wait_for_selector("#doc-lines .sll")
+    pg.select_option("#d-wh", label="SER-MAIN · Serres main")
+    pg.click("#sal-cust-new"); pg.fill("#modal-input", "Patient Papadopoulos"); pg.click("#modal-ok")
+    pg.wait_for_function("document.getElementById('s-cust').selectedOptions[0].textContent === 'Patient Papadopoulos'")
+    pg.fill("#s-addr", "Merarchias 5, Serres"); pg.fill("#s-vehicle", "SER-1001")
+    pg.fill("#doc-lines .sll .dl-code", "BR-1"); pg.press("#doc-lines .sll .dl-code", "Tab")
+    pg.wait_for_function("document.querySelector('#doc-lines .sll .dl-name').textContent.indexOf('Bracket') >= 0")
+    pg.fill("#doc-lines .sll .dl-qty", "2"); pg.fill("#doc-lines .sll .dl-price", "30"); pg.select_option("#doc-lines .sll .dl-vat", label="VAT24 (24%)")
+    pg.click("#d-save"); pg.wait_for_selector("#drawer footer [data-act=doc-action][data-to=posted]")
+    check("NOT A FISCAL DOCUMENT" in pg.inner_text("#sal-watermark") and pg.inner_text("#doc-totals") == "Net €60.00 · VAT €14.40 · gross €74.40",
+          "sales: DN draft saved through sales_get, watermark, totals from the server")
+    post_ack()
+    check(psql("select d.state || '/' || d.doc_no || '/' || d.total_gross || '/' || c.name || '/' || c.kind || '/' || (d.extra -> 'delivery' ->> 'vehicle') || '/' || "
+               "(select count(*) from erp.stock_moves m where m.tenant_id = d.tenant_id and m.document_id = d.document_id and m.qty_base = -2) || '/' || (d.total_cost is not null) "
+               "from erp.documents d join erp.tenants t using (tenant_id) join erp.counterparties c on c.tenant_id = d.tenant_id and c.counterparty_id = d.counterparty_id "
+               "where t.code = 'uitest' and d.doc_type = 'DN';")[1].strip() == "posted/DN-SER/000001/74.40/Patient Papadopoulos/customer/SER-1001/1/true",
+          "sales: DN-SER/000001 posted in the DB, the quick-added customer, delivery block, one stock move of -2 at cost")
+    pg.click("#sal-print-btn"); pg.wait_for_selector("#print-view")
+    check(pg.inner_text("#pv-no") == "DN-SER/000001" and "NOT A FISCAL DOCUMENT" in pg.inner_text("#pv-banner") and "UI Test" in pg.inner_text("#pv-issuer")
+          and "Patient Papadopoulos" in pg.inner_text("#pv-customer") and "VAT24 (24%)" in pg.inner_text("#pv-vat"), "sales: print view from the real sales_get")
+    pg.click("#pv-close"); pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
+    pg.click("#sal-tabs a[data-sub=rr]"); pg.wait_for_selector("#sal-new-rr"); pg.click("#sal-new-rr"); pg.wait_for_selector("#s-dn")
+    pg.select_option("#d-wh", label="SER-MAIN · Serres main"); pg.select_option("#s-dn", index=1); pg.click("#sal-dn-lines"); pg.wait_for_selector("#doc-lines .sll .dl-dn")
+    pg.select_option("#s-pm", "card"); pg.click("#d-save"); pg.wait_for_selector("#drawer footer [data-act=doc-action][data-to=posted]")
+    post_ack()
+    check(psql("select d.state || '/' || d.doc_no || '/' || d.total_gross || '/' || "
+               "(d.ref_document_id = (select x.document_id from erp.documents x where x.tenant_id = d.tenant_id and x.doc_type = 'DN')) || '/' || "
+               "(select count(*) from erp.stock_moves m where m.tenant_id = d.tenant_id and m.document_id = d.document_id) || '/' || "
+               "(erp.sales_collection(d.tenant_id, d.document_id) ->> 'payment_method') %s 'RR';" % SQ)[1].strip()
+          == "posted/RR-SER/000001/74.40/true/0/card", "sales: RR-SER/000001 bills the DN (reference kept), NO stock move, collection hook: card")
+    pg.click("#drawer header [data-act=drawer-close]"); pg.wait_for_selector("#drawer", state="detached")
+    pg.click("#sal-tabs a[data-sub=dn]"); pg.wait_for_selector("#sal-table tbody tr.click")
+    pg.click("#sal-table tbody tr.click:has-text('DN-SER/000001')"); pg.wait_for_selector("#sal-billing")
+    check("Fully billed" in pg.inner_text("#sal-billing"), "sales: the DN shows it is fully billed")
+    pg.click("#drawer footer [data-act=doc-action][data-to=cancelled]"); pg.fill("#modal-input", "test"); pg.click("#modal-ok")
+    pg.wait_for_function("document.getElementById('d-msg') && document.getElementById('d-msg').textContent.length > 0")
+    check("Not saved" in pg.inner_text("#d-msg") and psql("select d.state %s 'DN';" % SQ)[1].strip() == "posted", "sales: the billed DN cannot be cancelled (still posted)")
+    pg.click("#drawer header [data-act=drawer-close]")
     pg.context.close()
 
     pg = page(br, ANNA, "anna@ui.test")
     pg.wait_for_selector("#home-lead", timeout=15000)
-    check("Clinic user" in pg.inner_text("#home-lead") and pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock"] and "SER" in pg.inner_text("#main"),
+    check("Clinic user" in pg.inner_text("#home-lead") and pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Sales"] and "SER" in pg.inner_text("#main"),
           "invited member signs in: bound, role clinic_user, own branch, no Admin")
     pg.context.close()
 

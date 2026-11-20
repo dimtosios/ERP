@@ -434,6 +434,42 @@ the same branch, not deleted, not linked; it is linked to the draft. Idempotent 
 `A-Z a-z 0-9 : _ . -`; the page uses `dn:<attachment_id>`): a repeat returns `created: false` and the draft as it is
 now. `summary = {lines, matched, unmatched, low_confidence, supplier_matched, problems}`.
 
+## E210 sales lite (Draft 2: DN, RR, RS; NON-FISCAL)
+Types on the generic core (`doc_save_draft` / `doc_get` / `doc_list` / `doc_set_state` / `doc_copy` / `doc_delete_draft`),
+numbered per branch at post from a GAPLESS series (`DN-<branch>`, `RR-<branch>`, `RS-<branch>` from `series_create_defaults`;
+a series with `gapless = false` is a problem `invalid series_id`), states `draft -> posted -> cancelled` (cancel: reason,
+`doc.<dn|rr|rs>.approve` = owner / manager; reversing stock moves). `doc_types.fiscal = false` in v1 (internal documents).
+- DN: warehouse, customer (`counterparty_id` required; kind customer / both), `extra.delivery = {reason (sale |
+  sale_on_approval | sample | repair | return | other, required), address (200), carrier (80), vehicle (20)}`,
+  `extra.to_be_billed` (boolean, default true). Lines: goods items, `unit_price` optional (sale price), VAT class default =
+  the item's when the key `vat_class_id` is ABSENT; a priced line needs a VAT class. Stock OUT at the official cost (cost
+  rule `issue`), negative-stock warning / `ack_warnings` / block as for CONS. Create: owner, manager, warehouse, accounting.
+- RR: warehouse, customer optional, `extra.payment_method` (cash | card | bank | other, required: collected at issue),
+  price required. A line that bills a DN line carries `extra.dn_line_id` and the header `ref_document_id` = that DN (one DN
+  per receipt; same branch and customer; DN posted and to be billed; quantity <= the DN line's remaining, drafts count):
+  such a line moves NO stock (E140 skips it). A DN with a live (not cancelled, not draft) receipt cannot be cancelled
+  (`ERP_DOC_HAS_CHILDREN`). Create: owner, manager, accounting, clinic_user.
+- RS: branch (no warehouse), service items or description lines, payment method, no stock. Create: owner, manager, accounting.
+- Read: DN owner / manager / warehouse / accounting / readonly; RR, RS owner / manager / accounting / readonly (+ clinic_user RR).
+
+### `sales_get(p_document_id) -> document reply + sales`
+Read like `doc_get` (`ERP_TENANT` / `ERP_FORBIDDEN`); a non-sales document is `ERP_VALIDATION`. `sales = {fiscal: false,
+fiscal_needed: true, watermark: "NOT A FISCAL DOCUMENT", issuer {name (tenants.name), logo_url, legal_name, tax_id,
+tax_office, address, phone, email (tenant_settings.issuer)}, branch {code, name, address, establishment_no}, warehouse
+{code, name} | null, customer {name, code, tax_id, tax_office, country, street, city, postal_code, phone, email} | null,
+vat_breakdown [{vat_class_id, code, rate, net, vat, gross}]}`, DN: `billing {to_be_billed, status open | partial | full |
+not_to_be_billed (posted receipts), lines [{line_id, qty, billed, in_drafts, remaining}], receipts [{document_id, doc_type,
+doc_no, state}]}`, RR / RS: `collection {payment_method, amount, rcpt: null}`, RR: `dn {document_id, doc_no} | null`.
+The page's print view is built from this reply (browser Print -> Save as PDF).
+
+### Hook for the receipt of collection (next task; internal, not an RPC)
+`erp.sales_collection(tenant, document) -> {document_id, doc_type, doc_no, doc_date, branch_id, counterparty_id,
+payment_method, amount, currency}` for a POSTED RR / RS, else null. The RCPT task creates its record from it on post.
+
+### Settings: `issuer` (Draft 2)
+`settings_save` accepts `issuer` = object of `legal_name, tax_id (2-20 A-Z 0-9), tax_office, address, phone, email`
+(texts <= 300; the block is replaced; empty values dropped); `settings_get` returns it.
+
 ## Front-end (T04): which screen calls what
 | Screen | Calls | Capability shown / used |
 |---|---|---|

@@ -91,7 +91,7 @@ select t.fails(format($$select erp_api.doc_save_draft('ZNOTE', '{"branch_id": "%
                'ERP_TENANT', 'an item of tenant B on a line: ERP_TENANT');
 select t.fails(format($$select erp_api.doc_save_draft('ZNOTE', '{"branch_id": "%s"}', gen_random_uuid())$$, t.br(t.b(), 'B1')), 'ERP_TENANT', 'a branch of tenant B: ERP_TENANT');
 select t.fails(format($$select erp_api.doc_save_draft('ZNOTE', '{"branch_id": "%s"}', gen_random_uuid())$$, t.br(t.a(), 'A2')), 'ERP_FORBIDDEN', 'warehouse (A1) cannot create in A2');
-select t.ok(t.problems($$select erp_api.doc_save_draft('DN', '{}', gen_random_uuid())$$) -> 0 ->> 'field' = 'p_type', 'a type not enabled yet (DN, fiscal: E8) cannot be saved');
+select t.ok(t.problems($$select erp_api.doc_save_draft('SINV', '{}', gen_random_uuid())$$) -> 0 ->> 'field' = 'p_type', 'a type not enabled yet (SINV, fiscal: E8) cannot be saved');
 -- update: version required, lines replaced
 select t.fails(format($$select erp_api.doc_save_draft('ZNOTE', '{"document_id": "%s", "version": 7, "notes": "x"}', gen_random_uuid())$$, t.id('d1')), 'ERP_CONFLICT', 'stale version: ERP_CONFLICT');
 select t.keep(erp_api.doc_save_draft('ZNOTE', jsonb_build_object('document_id', t.id('d1'), 'version', 1, 'lines', jsonb_build_array(jsonb_build_object('item_id', t.it(t.a(), 'IT1'), 'qty', 4, 'unit_price', 2.5))), gen_random_uuid()));

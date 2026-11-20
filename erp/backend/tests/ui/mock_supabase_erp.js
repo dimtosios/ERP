@@ -43,6 +43,12 @@
     clinic_user: ['cons.read', 'cons.create'],
     readonly: ['opn.read', 'grn.read', 'adj.read', 'cons.read', 'trf.read', 'exp.read']
   };
+  // E210 (Draft 2): DN W A M O / cancel M O; RR A C M O / cancel M O; RS A M O / cancel M O; readonly reads
+  var SALECAPS = {owner: ['dn.read', 'dn.create', 'dn.approve', 'rr.read', 'rr.create', 'rr.approve', 'rs.read', 'rs.create', 'rs.approve'],
+                  manager: ['dn.read', 'dn.create', 'dn.approve', 'rr.read', 'rr.create', 'rr.approve', 'rs.read', 'rs.create', 'rs.approve'],
+                  warehouse: ['dn.read', 'dn.create'], accounting: ['dn.read', 'dn.create', 'rr.read', 'rr.create', 'rs.read', 'rs.create'],
+                  clinic_user: ['rr.read', 'rr.create'], readonly: ['dn.read', 'rr.read', 'rs.read']};
+  Object.keys(DOCCAPS).forEach(function (r) { DOCCAPS[r] = DOCCAPS[r].concat(SALECAPS[r]); });
   Object.keys(CAPS).forEach(function (r) { CAPS[r] = CAPS[r].concat(DOCCAPS[r].map(function (c) { return 'doc.' + c; }), ['stock.read']); });
   ['owner', 'manager', 'accounting'].forEach(function (r) { CAPS[r].push('expense.category.write'); });   // E180 (T19)
   var BR = [
@@ -117,7 +123,46 @@
     return o;
   }
   var ITEMBY = {'IT-001': {item_id: 'i1', name: 'Bracket 1'}, 'IT-002': {item_id: 'i2', name: 'Wire 2'}, 'IT-003': {item_id: 'i3', name: 'Elastic 3'}, '4006381333931': {item_id: 'i3', name: 'Elastic 3', code: 'IT-003'}};
-  var DCAP = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp'};
+  var DCAP = {OPN: 'opn', GRN: 'grn', ADJ_IN: 'adj', ADJ_OUT: 'adj', CONS: 'cons', TRF: 'trf', EXP: 'exp', DN: 'dn', RR: 'rr', RS: 'rs'};
+  var SALES = ['DN', 'RR', 'RS'];
+  // E210: one posted delivery note of SER to Dental GmbH (to be billed): 3 x IT-001 at 20.00 + 24 %
+  DOCS.push({document_id: 'sd1', doc_type: 'DN', state: 'posted', branch_id: 'b1', branch_code: 'SER', warehouse_id: 'w1', warehouse_code: 'SER-MAIN', counterparty_id: 'p2',
+             counterparty_name: 'Dental GmbH', doc_no: 'DN-SER/000001', doc_date: '2026-11-17', version: 2, extra: {delivery: {reason: 'sale', vehicle: 'ABC-1234'}, to_be_billed: true},
+             total_net: '60.00', total_vat: '14.40', total_gross: '74.40',
+             lines: [{line_id: 'sd1-0', line_no: 1, item_id: 'i1', item_code: 'IT-001', item_name: 'Bracket 1', qty: '3.0000', qty_base: '3.0000', unit_price: '20.0000', vat_class_id: 'v1',
+                      net: '60.00', vat: '14.40', gross: '74.40', extra: {}}]});
+  function dnBilled(lineId, posted) {
+    return DOCS.filter(function (x) { return x.doc_type === 'RR' && x.state !== 'cancelled' && (!posted || x.state === 'posted'); }).reduce(function (s, x) {
+      return s + (x.lines || []).filter(function (l) { return (l.extra || {}).dn_line_id === lineId; }).reduce(function (a, l) { return a + Number(l.qty); }, 0); }, 0);
+  }
+  function salesOut(d) {
+    var o = docOut(d), c = CPS.find(function (x) { return x.counterparty_id === d.counterparty_id; }), b = BR.find(function (x) { return x.branch_id === d.branch_id; }) || {};
+    var w = WHS.find(function (x) { return x.warehouse_id === d.warehouse_id; }), vb = {};
+    (d.lines || []).forEach(function (l) {
+      var v = VATS.find(function (x) { return x.vat_class_id === l.vat_class_id; }) || {}, k = l.vat_class_id || '-';
+      vb[k] = vb[k] || {vat_class_id: l.vat_class_id || null, code: v.code || null, rate: v.rate || null, net: 0, vat: 0, gross: 0};
+      vb[k].net += Number(l.net || 0); vb[k].vat += Number(l.vat || 0); vb[k].gross += Number(l.gross || l.net || 0);
+    });
+    var sales = {fiscal: false, fiscal_needed: true, watermark: 'NOT A FISCAL DOCUMENT', issuer: Object.assign({name: 'iSmile', logo_url: SET.logo_url}, SET.issuer || {}),
+                 branch: {code: b.code, name: b.name, address: b.address, establishment_no: b.establishment_no}, warehouse: w ? {code: w.code, name: w.name} : null,
+                 customer: c ? {name: c.name, code: c.code, tax_id: c.tax_id, country: c.country, city: c.city} : null,
+                 vat_breakdown: Object.keys(vb).map(function (k) { var x = vb[k]; x.net = x.net.toFixed(2); x.vat = x.vat.toFixed(2); x.gross = x.gross.toFixed(2); return x; })};
+    if (d.doc_type === 'DN') {
+      var tbb = (d.extra || {}).to_be_billed !== false, lines = (d.lines || []).map(function (l) {
+        var bp = dnBilled(l.line_id, true), ba = dnBilled(l.line_id, false);
+        return {line_id: l.line_id, qty: l.qty, billed: String(bp), in_drafts: String(ba - bp), remaining: String(Number(l.qty) - ba)}; });
+      var tot = lines.reduce(function (s, x) { return s + Number(x.billed); }, 0);
+      sales.billing = {to_be_billed: tbb, status: !tbb ? 'not_to_be_billed' : tot === 0 ? 'open' : lines.every(function (x) { return Number(x.billed) >= Number(x.qty); }) ? 'full' : 'partial',
+                       lines: lines, receipts: DOCS.filter(function (x) { return x.doc_type === 'RR' && x.ref_document_id === d.document_id; }).map(function (x) {
+                         return {document_id: x.document_id, doc_type: 'RR', doc_no: x.doc_no, state: x.state}; })};
+    } else {
+      sales.collection = {payment_method: (d.extra || {}).payment_method || null, amount: d.total_gross, rcpt: null};
+      var dn = d.ref_document_id && DOCS.find(function (x) { return x.document_id === d.ref_document_id; });
+      if (d.doc_type === 'RR') sales.dn = dn ? {document_id: dn.document_id, doc_no: dn.doc_no} : null;
+    }
+    o.sales = sales;
+    return o;
+  }
   // E180 (T19 / T20): expense categories and expenses. e1 posted in SER (paid by card), e2 posted in THE (owner only)
   var EXPCATS = [{category_id: 'ec1', parent_id: null, code: 'RENT', name: 'Rent', path: 'RENT', default_vat_class_id: 'v0', vat_code: 'VAT0', vat_rate: '0.00', active: true},
                  {category_id: 'ec2', parent_id: null, code: 'UTIL', name: 'Utilities', path: 'UTIL', default_vat_class_id: 'v1', vat_code: 'VAT24', vat_rate: '24.00', active: true},
@@ -161,7 +206,13 @@
     o.problems = d.state !== 'draft' ? [] : d.doc_type === 'EXP'
       ? (d.lines || []).filter(function (l) { return !l.expense_category_id || !l.vat_class_id; }).map(function (l) { return {code: 'required', field: l.expense_category_id ? 'vat_class_id' : 'expense_category_id', line_no: l.line_no,
           message: l.expense_category_id ? 'Choose the VAT class.' : 'Choose the expense category.'}; })
-      : (d.lines || []).filter(function (l) { return !l.item_id; }).map(function (l) { return {code: 'required', field: 'item_id', line_no: l.line_no, message: 'Item is required.'}; });
+      : (d.lines || []).filter(function (l) { return !l.item_id && !(d.doc_type === 'RS' && l.description); }).map(function (l) { return {code: 'required', field: 'item_id', line_no: l.line_no, message: 'Item is required.'}; });
+    if (d.state === 'draft' && SALES.indexOf(d.doc_type) >= 0) {   // E210 (doc_sales_validate, the common cases)
+      if (d.doc_type === 'DN' && !d.counterparty_id) o.problems.push({code: 'required', field: 'counterparty_id', message: 'Counterparty is required.'});
+      if (d.doc_type === 'DN' && !((d.extra || {}).delivery || {}).reason) o.problems.push({code: 'required', field: 'extra.delivery.reason', message: 'Delivery: the reason of the movement is required.'});
+      if (d.doc_type !== 'DN' && !(d.extra || {}).payment_method) o.problems.push({code: 'required', field: 'extra.payment_method', message: 'Choose how it was paid.'});
+      if (d.doc_type !== 'DN') (d.lines || []).forEach(function (l) { if (l.unit_price == null || l.unit_price === '') o.problems.push({code: 'required', field: 'unit_price', line_no: l.line_no, message: 'The price is required.'}); });
+    }
     if (d.state === 'draft' && d.doc_type === 'GRN') (d.lines || []).forEach(function (l) {   // Draft 1 (E190 grn_dn_validate)
       var x = (l.extra || {}).dn; if (!x) return;
       if (x.status === 'unmatched' && !l.item_id) o.problems.push({code: 'not_matched', field: 'item_id', line_no: l.line_no, message: 'Item not matched: "' + (x.description || x.supplier_code || x.barcode || '?') + '". Choose the item.'});
@@ -191,7 +242,7 @@
     if (!errs.length && !a.p_dry_run) rows.forEach(add);
     return {data: {dry_run: !!a.p_dry_run || errs.length > 0, rows: rows.length, created: rows.length, updated: 0, errors: errs}, error: null};
   }
-  var SET = {time_zone: 'Europe/Athens', negative_stock: 'warn', valuation_method: 'average', lock_date: null, hide_money: false, logo_url: null, version: 1,
+  var SET = {time_zone: 'Europe/Athens', negative_stock: 'warn', valuation_method: 'average', lock_date: null, hide_money: false, logo_url: null, version: 1, issuer: {},
              thresholds: ls('mock_exp_limit') ? {exp_value: Number(ls('mock_exp_limit'))} : {}};   // mock_exp_limit: thresholds.exp_value at load
   var IDEM = {};
   var ATT = [];   // Draft 1 (E190) attachments, with their base64 content
@@ -233,7 +284,7 @@
       if (!can('tenant.settings.write')) return err('ERP_FORBIDDEN', 'no');
       var p = a.p_settings || {};
       if (p.version !== SET.version) return err('ERP_CONFLICT', 'version');
-      ['time_zone', 'negative_stock', 'lock_date', 'hide_money', 'logo_url', 'thresholds'].forEach(function (k) { if (k in p) SET[k] = p[k]; });
+      ['time_zone', 'negative_stock', 'lock_date', 'hide_money', 'logo_url', 'thresholds', 'issuer'].forEach(function (k) { if (k in p) SET[k] = p[k]; });
       SET.version++; return {data: Object.assign({}, SET), error: null};
     },
     member_list: function (a) {
@@ -318,10 +369,16 @@
       var f = a.p_filter || {}, types = f.doc_type ? [f.doc_type] : (f.doc_types || []);
       types = types.filter(function (x) { return can('doc.' + DCAP[x] + '.read'); });
       if (!types.length) return err('ERP_FORBIDDEN', 'no');
-      var rows = DOCS.filter(function (d) { return types.indexOf(d.doc_type) >= 0 && (!f.state || d.state === f.state) && (d.doc_type !== 'TRF' || trfVisible(d)) && (d.doc_type !== 'EXP' || mine(d.branch_id))
+      var rows = DOCS.filter(function (d) { return types.indexOf(d.doc_type) >= 0 && (!f.state || d.state === f.state) && (d.doc_type !== 'TRF' || trfVisible(d)) && ((d.doc_type !== 'EXP' && SALES.indexOf(d.doc_type) < 0) || mine(d.branch_id))
           && (!f.branch_id || d.branch_id === f.branch_id || (d.doc_type === 'TRF' && whBranch(d.dest_warehouse_id) === f.branch_id)); })
         .map(function (d) { var o = docOut(d); delete o.lines; return o; });
       return {data: page(rows, a, function (r) { return r.document_id; }), error: null};
+    },
+    sales_get: function (a) {
+      var d = DOCS.find(function (x) { return x.document_id === a.p_document_id; }); if (!d) return err('ERP_TENANT', 'not yours');
+      if (SALES.indexOf(d.doc_type) < 0) return err('ERP_VALIDATION', '1 problem', [{code: 'invalid', field: 'p_document_id', message: d.doc_type + ' is not a sales document.'}]);
+      if (!can('doc.' + DCAP[d.doc_type] + '.read') || !mine(d.branch_id)) return err('ERP_FORBIDDEN', 'no');
+      return {data: salesOut(d), error: null};
     },
     doc_get: function (a) { var d = DOCS.find(function (x) { return x.document_id === a.p_document_id; }); if (!d) return err('ERP_TENANT', 'not yours'); return {data: docOut(d), error: null}; },
     doc_save_draft: function (a) {
@@ -336,7 +393,8 @@
         var net = l.unit_price != null ? (Math.round(Number(l.qty) * Number(l.unit_price) * (1 - Number(l.discount_pct || 0) / 100) * 100) / 100).toFixed(2) : '0.00';
         return Object.assign({line_id: d.document_id + '-' + i, line_no: i + 1, item_code: code || '', item_name: code ? ITEMBY[code].name : '', qty_base: l.qty, net: net}, l);
       });
-      if (d.doc_type === 'EXP') (d.lines || []).forEach(function (l) {
+      if (SALES.indexOf(d.doc_type) >= 0) (d.lines || []).forEach(function (l) { if (!('vat_class_id' in l) && l.item_id) l.vat_class_id = 'v1'; });   // the item's class
+      if (d.doc_type === 'EXP' || SALES.indexOf(d.doc_type) >= 0) (d.lines || []).forEach(function (l) {
         var v = VATS.find(function (x) { return x.vat_class_id === l.vat_class_id; }), vat = v ? Math.round(Number(l.net) * Number(v.rate)) / 100 : 0;
         l.vat = vat.toFixed(2); l.gross = (Number(l.net) + vat).toFixed(2);
       });
@@ -385,12 +443,16 @@
       }
       if (a.p_to_state === 'cancelled' && !o.reason) return err('ERP_VALIDATION', '1 problem', [{code: 'required', field: 'reason', message: 'A reason is required.'}]);
       if (a.p_to_state === 'posted' && d.doc_type === 'GRN' && docOut(d).problems.length) return err('ERP_VALIDATION', docOut(d).problems.length + ' problem(s)', docOut(d).problems);
+      if (a.p_to_state === 'cancelled' && d.doc_type === 'DN' && DOCS.some(function (x) { return x.ref_document_id === d.document_id && x.state === 'posted'; }))
+        return err('ERP_DOC_HAS_CHILDREN', 'Document ' + d.doc_no + ' has later documents that depend on it: cancel them first.');
+      if (a.p_to_state === 'posted' && SALES.indexOf(d.doc_type) >= 0 && docOut(d).problems.length) return err('ERP_VALIDATION', docOut(d).problems.length + ' problem(s)', docOut(d).problems);
       if (a.p_to_state === 'posted') {
-        var sign = d.doc_type === 'CONS' || d.doc_type === 'ADJ_OUT' ? -1 : 1;
-        var warn = (d.lines || []).filter(function (l) { return sign < 0 && d.warehouse_id !== 'wt' && (STOCKQ[l.item_id] || 0) - Number(l.qty) < 0; })
+        var sign = d.doc_type === 'CONS' || d.doc_type === 'ADJ_OUT' || d.doc_type === 'DN' || d.doc_type === 'RR' ? -1 : d.doc_type === 'RS' ? 0 : 1;
+        var stockLines = (d.lines || []).filter(function (l) { return !(l.extra || {}).dn_line_id; });   // E210: a billed DN line moved no stock
+        var warn = stockLines.filter(function (l) { return sign < 0 && d.warehouse_id !== 'wt' && (STOCKQ[l.item_id] || 0) - Number(l.qty) < 0; })
           .map(function (l) { return {code: 'W_STOCK_NEGATIVE', item_id: l.item_id, item_code: l.item_code, warehouse_id: d.warehouse_id, warehouse_code: d.warehouse_code, qty_after: String((STOCKQ[l.item_id] || 0) - Number(l.qty))}; });
         if (warn.length && !o.ack_warnings) return {data: {posted: false, warnings: warn, document: docOut(d)}, error: null};
-        if (d.warehouse_id !== 'wt') (d.lines || []).forEach(function (l) { STOCKQ[l.item_id] = (STOCKQ[l.item_id] || 0) + sign * Number(l.qty); });
+        if (d.warehouse_id !== 'wt') stockLines.forEach(function (l) { STOCKQ[l.item_id] = (STOCKQ[l.item_id] || 0) + sign * Number(l.qty); });
         d.state = 'posted'; d.doc_no = d.doc_type + '-SER/' + String(NEXTID++).padStart(6, '0'); d.version++;
         var parent = d.ref_document_id && DOCS.find(function (z) { return z.document_id === d.ref_document_id && z.doc_type === 'TRF'; });
         if (parent && TRFX[parent.document_id].adj.every(function (id) { return DOCS.find(function (z) { return z.document_id === id; }).state === 'posted'; })) {

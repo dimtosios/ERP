@@ -47,7 +47,7 @@ with sync_playwright() as p:
 
     # ---------- owner: on hand, card ----------
     pg = page(br, "owner")
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Admin"], "owner nav: Home, Master data, Stock, Transfers, Expenses, Admin")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Transfers", "Expenses", "Sales", "Admin"], "owner nav: Home, Master data, Stock, Transfers, Expenses, Sales, Admin")
     check(pg.locator("#stk-tabs a").all_inner_texts() == ["On hand", "Documents", "Negative stock", "Alerts"], "stock tabs")
     wait_text(pg, "#stk-table", "IT-002")
     txt = pg.inner_text("#stk-table")
@@ -141,7 +141,7 @@ with sync_playwright() as p:
 
     # ---------- clinic_user: consumption only, no values, phone width ----------
     pg = page(br, "clinic_user", w=390, h=800)
-    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock"], "clinic_user nav")
+    check(pg.locator("#nav a").all_inner_texts() == ["Home", "Master data", "Stock", "Sales"], "clinic_user nav")
     wait_text(pg, "#stk-table", "IT-001")
     check("Average cost" not in pg.inner_text("#stk-table") and "€" not in pg.inner_text("#stk-table") and "THE-MAIN" not in pg.inner_text("#stk-table"), "clinic_user: own branch, no values")
     check(pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), "phone width: on hand without horizontal scroll")
